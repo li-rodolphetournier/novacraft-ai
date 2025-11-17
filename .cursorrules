@@ -1,0 +1,9 @@
+## Cursor Rules
+
+- Préfère TypeScript + React Server Components fournis par Next.js app router.
+- Style via TailwindCSS; crée des composants réutilisables si la vue grossit.
+- Sépare les responsabilités front/back : API fetch côté client vers FastAPI local.
+- Documente les commandes clés dans les README correspondants.
+- Garde les dépendances minimales et pense à l’exécution hors-ligne.
+- Utilise des noms de commits/branches explicites lors des livraisons (si demandé).
+
