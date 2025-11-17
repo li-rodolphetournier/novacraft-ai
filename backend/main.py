@@ -462,18 +462,9 @@ def generate_video(payload: GenerateVideoRequest):
     """Génère une petite vidéo à partir d'une image de départ + texte."""
     pipe = get_video_pipeline()
     
-    # Force une résolution max de 384x384 pour économiser la VRAM (8 Go)
-    # SVD est très gourmand, même avec sequential CPU offload
+    # Résolution fallback (au cas où l'image initiale manque, mais init est requis)
     width, height = RESOLUTIONS[payload.resolution]
     max_video_size = 384
-    if width > max_video_size or height > max_video_size:
-        # Redimensionne en gardant le ratio
-        ratio = min(max_video_size / width, max_video_size / height)
-        width = int(width * ratio)
-        height = int(height * ratio)
-        # Assure que c'est un multiple de 64 (requis par SVD)
-        width = (width // 64) * 64
-        height = (height // 64) * 64
 
     # Seed
     seed = payload.seed if payload.seed >= 0 else random.randint(0, 2**32 - 1)
@@ -489,6 +480,16 @@ def generate_video(payload: GenerateVideoRequest):
     try:
         img_bytes = base64.b64decode(payload.init_image_base64)
         init_image = Image.open(BytesIO(img_bytes)).convert("RGB")
+        target_w, target_h = init_image.size
+        max_dim = max(target_w, target_h)
+        if max_dim > max_video_size:
+            scale = max_video_size / max_dim
+            target_w = int(target_w * scale)
+            target_h = int(target_h * scale)
+        # Arrondit aux multiples de 64 pour SVD, minimum 64
+        target_w = max(64, (target_w // 64) * 64)
+        target_h = max(64, (target_h // 64) * 64)
+        width, height = target_w, target_h
         init_image = init_image.resize((width, height))
     except Exception as err:  # pylint: disable=broad-except
         raise HTTPException(status_code=400, detail=f"Image invalide: {err}") from err
