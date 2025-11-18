@@ -28,6 +28,7 @@ const HISTORY_STORAGE_KEY = "sd_generator_history";
 const MAX_HISTORY_ENTRIES = 50;
 const GALLERY_STORAGE_KEY = "sd_generator_gallery";
 const MAX_GALLERY_IMAGES = 100;
+const CUSTOM_PRESET_STORAGE_KEY = "sd_generator_custom_presets";
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
@@ -65,6 +66,8 @@ export default function Home() {
   const [availableLoras, setAvailableLoras] = useState<LoraOption[]>([]);
   const [selectedLoras, setSelectedLoras] = useState<SelectedLora[]>([]);
   const [showNSFW, setShowNSFW] = useState(false);
+  const [customPresets, setCustomPresets] = useState<PromptPreset[]>([]);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
   // Charger les images depuis le backend au montage
   useEffect(() => {
@@ -255,19 +258,56 @@ export default function Home() {
     return "Haute fidélité (>35)";
   }, [steps]);
 
+  const saveCustomPresetList = useCallback((presets: PromptPreset[]) => {
+    setCustomPresets(presets);
+    try {
+      localStorage.setItem(CUSTOM_PRESET_STORAGE_KEY, JSON.stringify(presets));
+    } catch (err) {
+      console.warn("Impossible de sauvegarder les presets personnalisés", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(CUSTOM_PRESET_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as PromptPreset[];
+        const normalized = parsed.map((preset) => ({
+          ...preset,
+          id: preset.id ?? `custom-${crypto.randomUUID()}`,
+        }));
+        setCustomPresets(normalized);
+      }
+    } catch (err) {
+      console.warn("Impossible de charger les presets personnalisés", err);
+    }
+  }, []);
+
   const loraOptionMap = useMemo(() => {
     return new Map(availableLoras.map((lora) => [lora.key, lora]));
   }, [availableLoras]);
 
+  const allPresets = useMemo(() => {
+    return [...promptPresets, ...customPresets];
+  }, [customPresets]);
+
   const filteredPromptPresets = useMemo(
-    () => promptPresets.filter((preset) => showNSFW || !preset.nsfw),
-    [showNSFW],
+    () => allPresets.filter((preset) => showNSFW || !preset.nsfw),
+    [allPresets, showNSFW],
   );
 
   const filteredLoras = useMemo(
     () => availableLoras.filter((lora) => showNSFW || !lora.nsfw),
     [availableLoras, showNSFW],
   );
+
+  const customPresetIds = useMemo(() => {
+    return new Set(
+      customPresets
+        .map((preset) => preset.id)
+        .filter((id): id is string => typeof id === "string"),
+    );
+  }, [customPresets]);
 
   const handleToggleLora = (key: string) => {
     setSelectedLoras((prev) => {
@@ -506,6 +546,7 @@ export default function Home() {
   };
 
   const handleLoadPreset = (preset: PromptPreset) => {
+    setActivePresetId(preset.id ?? null);
     setPrompt(preset.prompt);
     setNegativePrompt(preset.negativePrompt);
 
@@ -556,6 +597,60 @@ export default function Home() {
     } else {
       setSelectedLoras([]);
     }
+  };
+
+  const buildPresetFromState = (base?: PromptPreset): PromptPreset => ({
+    id: base?.id ?? `custom-${crypto.randomUUID()}`,
+    name: base?.name ?? "Preset personnalisé",
+    description: base?.description ?? "Preset sauvegardé depuis l'interface",
+    prompt,
+    negativePrompt,
+    sampler,
+    resolution,
+    steps,
+    cfgScale,
+    seed,
+    clipSkip,
+    nsfw: showNSFW,
+    model,
+    loras: selectedLoras.map((item) => ({ ...item })),
+  });
+
+  const handleAddPreset = () => {
+    const name = window.prompt("Nom du preset ?", "Preset personnalisé");
+    if (!name || !name.trim()) {
+      return;
+    }
+    const description =
+      window.prompt("Description (optionnel)", "Preset sauvegardé depuis l'interface") ??
+      "Preset sauvegardé depuis l'interface";
+    const newPreset = {
+      ...buildPresetFromState(),
+      id: `custom-${crypto.randomUUID()}`,
+      name: name.trim(),
+      description: description.trim(),
+    };
+    const updated = [...customPresets, newPreset];
+    saveCustomPresetList(updated);
+    setActivePresetId(newPreset.id ?? null);
+  };
+
+  const handleSavePreset = () => {
+    if (activePresetId) {
+      const index = customPresets.findIndex((preset) => preset.id === activePresetId);
+      if (index !== -1) {
+        const updated = [...customPresets];
+        updated[index] = {
+          ...buildPresetFromState(customPresets[index]),
+          id: activePresetId,
+          name: customPresets[index].name,
+          description: customPresets[index].description,
+        };
+        saveCustomPresetList(updated);
+        return;
+      }
+    }
+    handleAddPreset();
   };
 
   const handleLoadHistory = (entry: HistoryEntry) => {
@@ -834,6 +929,10 @@ export default function Home() {
               onChatInputChange={setChatInput}
               onSendMessage={handleSendMessage}
               onChatReset={handleChatReset}
+              onAddPreset={handleAddPreset}
+              onSavePreset={handleSavePreset}
+              activePresetId={activePresetId}
+              customPresetIds={customPresetIds}
             />
 
             <ModelSettingsPanel

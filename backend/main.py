@@ -626,6 +626,7 @@ def generate(payload: GenerateRequest):
                 "sampler": payload.sampler,
                 "steps": payload.steps,
                 "cfg_scale": payload.cfg_scale,
+                "clip_skip": payload.clip_skip,
                 "resolution": f"{width}x{height}",
                 "seed": seed,
                 "use_aspect_ratio": bool(payload.width and payload.height),

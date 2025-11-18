@@ -50,6 +50,7 @@ export type HistoryEntry = {
     sampler: Sampler;
     steps: number;
     cfgScale: number;
+    clipSkip?: number;
     resolution: Resolution;
     seed: number;
     useAspectRatio?: boolean;
@@ -100,5 +101,6 @@ export type PromptPreset = {
   nsfw?: boolean;
   model?: ModelKey;
   loras?: SelectedLora[];
+  id?: string;
 };
 

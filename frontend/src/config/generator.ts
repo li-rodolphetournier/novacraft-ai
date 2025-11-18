@@ -41,6 +41,7 @@ export const aspectRatios: AspectRatioOption[] = [
 
 export const promptPresets: PromptPreset[] = [
   {
+    id: "portrait-realiste",
     name: "Portrait réaliste",
     prompt: "portrait of a person, professional photography, high quality, detailed face, natural lighting",
     negativePrompt: "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
@@ -54,6 +55,7 @@ export const promptPresets: PromptPreset[] = [
     model: "sdxl",
   },
   {
+    id: "paysage-fantastique",
     name: "Paysage fantastique",
     prompt: "epic fantasy landscape, mountains, magical atmosphere, cinematic lighting, highly detailed, 4k",
     negativePrompt: "blurry, low quality, distorted, watermark, people",
@@ -67,6 +69,7 @@ export const promptPresets: PromptPreset[] = [
     model: "sdxl",
   },
   {
+    id: "architecture-moderne",
     name: "Architecture moderne",
     prompt: "modern architecture, futuristic building, clean lines, minimalist design, professional photography",
     negativePrompt: "blurry, low quality, old, vintage, distorted",
@@ -80,6 +83,7 @@ export const promptPresets: PromptPreset[] = [
     model: "wai-illustrious-sdxl",
   },
   {
+    id: "art-conceptuel",
     name: "Art conceptuel",
     prompt: "concept art, digital painting, vibrant colors, detailed, fantasy, artistic style",
     negativePrompt: "blurry, low quality, watermark, realistic photo",
@@ -93,6 +97,7 @@ export const promptPresets: PromptPreset[] = [
     model: "sdxl",
   },
   {
+    id: "nsfw-1",
     name: "Nfsw",
     prompt:
       "anime style, manga style, A woman is at the beach, she has semen on her mouth that is dripping onto the man's penis. The woman uses her breasts to perform fellatio on the man. She squeezes her breasts together with her fists",
@@ -113,6 +118,7 @@ export const promptPresets: PromptPreset[] = [
     ],
   },
   {
+    id: "nsfw-2",
     name: "Nfsw2",
     prompt:
       "score_9, score_8_up, score_7_up, score_6_up, Fubuki (One-Punch Man), black leotard, jewelry, natural breasts, anime, hips, cinematic angle, cinematic lighting, volumetric lighting, solo focus, erect nipples, medium breasts, saggy breasts, teardrop breasts, face focus, sweat, sleeveless, mature woman, topless, sexy, seductive, parted lips, determined, looking at viewer, (leaning forward), arched back, 1boy, looking at viewer, (pov:1.5), crotch, (paizuri:1.2),penis between breasts, upper body (close up:1.2), low angle, cum on breasts, cum on face, ejaculation, (mouth open, tongue out), tongue, tongue out, rolling eyes, sunglasses on head, beach, sky, palms, <lora:incase-ilff-v3-4:0.5> <lora:Expressive_H:0.45>",
@@ -134,6 +140,7 @@ export const promptPresets: PromptPreset[] = [
     ],
   },
   {
+    id: "nsfw-3",
     name: "Nfsw3",
     prompt:
       "Photorealistic highly detailed face, highly detailed, realistic, shiny transparent white latex, close-up of her face:1.5, highly-detailed, best quality, masterpiece, very aesthetic, sharp, spectacular wet red hair:2, cum in hair, fake breasts, multiple neon colors:1.5, transparent polished transparent white latex suit:2, glossy skin tight 8k, source_photo, source_real, adorable, supermodel, real life photo, cute and short girl, detailed face and cock and fingers and hair:1.5, absurdres, 1girl 18yo, Cutie:1.5, beautiful face, too big for mouth, fellatio, huge penis, ((cum on face and hair and cock)), horny, blush, (above view:1.5), nude,(adorable),(spectacular curly red hair),, (short black fat cock on face), imminent blowjob, penis on face, ((excessive cum, cum on face, cum on hair, cum on breasts)), extremely fat black cock on cheek, extremely short black cock on face, perfect curved fat black cock:1.5",

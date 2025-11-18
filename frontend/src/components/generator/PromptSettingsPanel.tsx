@@ -50,6 +50,10 @@ type PromptSettingsPanelProps = {
   onChatInputChange: (value: string) => void;
   onSendMessage: () => void;
   onChatReset: () => void;
+  onAddPreset: () => void;
+  onSavePreset: () => void;
+  activePresetId: string | null;
+  customPresetIds: Set<string>;
 };
 
 export function PromptSettingsPanel({
@@ -95,6 +99,10 @@ export function PromptSettingsPanel({
   onChatInputChange,
   onSendMessage,
   onChatReset,
+  onAddPreset,
+  onSavePreset,
+  activePresetId,
+  customPresetIds,
 }: PromptSettingsPanelProps) {
   const handleNumericChange =
     (callback: (value: number) => void) =>
@@ -103,18 +111,45 @@ export function PromptSettingsPanel({
     };
 
   const renderPromptPresets = () => (
-    <div className="ml-auto grid grid-cols-2 gap-1">
-      {promptPresets.map((preset) => (
+    <div className="ml-auto flex flex-col items-end gap-1">
+      <div className="grid grid-cols-2 gap-1">
+        {promptPresets.map((preset) => {
+          const isActive = preset.id && activePresetId === preset.id;
+          const isCustom = preset.id ? customPresetIds.has(preset.id) : false;
+          return (
+            <button
+              key={`${preset.id ?? preset.name}`}
+              onClick={() => onPresetApply(preset)}
+              className={`rounded-lg border px-2 py-0.5 text-[10px] uppercase tracking-wide transition ${
+                isActive
+                  ? "border-indigo-400 bg-indigo-500/20 text-white"
+                  : "border-white/10 bg-slate-900/60 text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`}
+              title={preset.description}
+              type="button"
+            >
+              {preset.name}
+              {isCustom && " ★"}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex gap-2">
         <button
-          key={preset.name}
-          onClick={() => onPresetApply(preset)}
-          className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300 transition hover:bg-slate-800 hover:text-white"
-          title={preset.description}
           type="button"
+          onClick={onAddPreset}
+          className="rounded-lg border border-white/15 bg-slate-900/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-200 transition hover:bg-slate-800 hover:text-white"
         >
-          {preset.name}
+          Ajouter preset
         </button>
-      ))}
+        <button
+          type="button"
+          onClick={onSavePreset}
+          className="rounded-lg border border-indigo-400/40 bg-indigo-500/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-white transition hover:bg-indigo-500/30"
+        >
+          Enregistrer preset
+        </button>
+      </div>
     </div>
   );
 
