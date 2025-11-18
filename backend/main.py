@@ -430,6 +430,7 @@ def list_loras():
                 "description": config.get("description", ""),
                 "default_weight": config.get("default_weight", 0.5),
                 "path": config.get("path"),
+                "nsfw": config.get("nsfw", False),
             }
         )
     return {"loras": items}

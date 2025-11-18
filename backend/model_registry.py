@@ -105,6 +105,7 @@ LORA_LIBRARY: Dict[str, Dict[str, str | float]] = {
         "path": os.getenv("LORA_EXPRESSIVE_H", "models/lora/Expressive_H.safetensors"),
         "default_weight": 0.45,
         "description": "Style anime/hentai très expressif",
+        "nsfw": True,
     },
     "incase-ponyxl": {
         "label": "Incase Style [PonyXL]",
@@ -113,12 +114,35 @@ LORA_LIBRARY: Dict[str, Dict[str, str | float]] = {
         ),
         "default_weight": 0.5,
         "description": "Style Incase v3.0 optimisé PonyXL",
+        "nsfw": True,
     },
     "g0th1c-pxl": {
         "label": "G0th1c PXL",
         "path": os.getenv("LORA_G0TH1C_PXL", "models/lora/g0th1cPXL.safetensors"),
         "default_weight": 0.5,
         "description": "Style gothique optimisé PonyXL",
+        "nsfw": True,
+    },
+    "bs-pony-alpha": {
+        "label": "BS Pony Alpha 1.0",
+        "path": os.getenv("LORA_BS_PONY_ALPHA", "models/lora/BS- Pony_alpha1.0_rank4.safetensors"),
+        "default_weight": 0.6,
+        "description": "LoRA BS Pony alpha (rank4)",
+        "nsfw": True,
+    },
+    "ps-alpha": {
+        "label": "PS Alpha 1.0",
+        "path": os.getenv("LORA_PS_ALPHA", "models/lora/PS_alpha1.0_rank4.safetensors"),
+        "default_weight": 0.55,
+        "description": "LoRA PS alpha polyvalente (rank4)",
+        "nsfw": True,
+    },
+    "pts-alpha": {
+        "label": "PTS Alpha 1.0",
+        "path": os.getenv("LORA_PTS_ALPHA", "models/lora/PTS_alpha1.0_rank4.safetensors"),
+        "default_weight": 0.55,
+        "description": "LoRA PTS alpha (rank4)",
+        "nsfw": True,
     },
 }
 
