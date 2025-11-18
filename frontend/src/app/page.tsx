@@ -195,7 +195,10 @@ export default function Home() {
   const [generationProgress, setGenerationProgress] = useState<number | null>(null);
   const [lastDuration, setLastDuration] = useState<number | null>(null);
   const [availableModels, setAvailableModels] = useState<Set<string>>(new Set(["sdxl"]));
-  const [mode, setMode] = useState<"image" | "video">("image");
+  const [mode, setMode] = useState<"image" | "video" | "chat">("image");
+  const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatting, setIsChatting] = useState(false);
   const [videos, setVideos] = useState<GeneratedVideo[]>([]);
   const [initImageBase64, setInitImageBase64] = useState<string | null>(null);
   const [numFrames, setNumFrames] = useState(8);
@@ -217,17 +220,77 @@ export default function Home() {
     }
   }, []);
 
-  // Charger les images depuis localStorage au montage
+  // Charger les images depuis le backend au montage
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(GALLERY_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as GeneratedImage[];
-        setImages(parsed.slice(0, MAX_GALLERY_IMAGES));
+    const loadImages = async () => {
+      try {
+        // D'abord charger depuis le backend
+        const response = await fetch(`${apiBase}/storage/images`);
+        if (response.ok) {
+          const data = await response.json();
+          const backendImages: GeneratedImage[] = (data.images || []).map((img: any) => ({
+            id: img.id,
+            seed: img.seed,
+            base64: img.base64 || "",
+            model: img.model,
+            sampler: img.sampler,
+            steps: img.steps,
+            cfg_scale: img.cfg_scale,
+            resolution: img.resolution,
+            prompt: img.prompt,
+            negative_prompt: img.negative_prompt,
+            clip_skip: img.clip_skip,
+            loras: img.loras || [],
+          })).filter((img: GeneratedImage) => img.base64); // Filtrer les images sans base64
+        
+          if (backendImages.length > 0) {
+            setImages(backendImages.slice(0, MAX_GALLERY_IMAGES));
+            saveImages(backendImages.slice(0, MAX_GALLERY_IMAGES));
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Impossible de charger depuis le backend, utilisation du localStorage", err);
       }
-    } catch {
-      // Ignorer les erreurs de parsing
-    }
+      
+      // Fallback sur localStorage
+      try {
+        const stored = localStorage.getItem(GALLERY_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as GeneratedImage[];
+          setImages(parsed.slice(0, MAX_GALLERY_IMAGES));
+        }
+      } catch {
+        // Ignorer les erreurs de parsing
+      }
+    };
+    
+    loadImages();
+  }, []);
+
+  // Charger les vidéos depuis le backend au montage
+  useEffect(() => {
+    const loadVideos = async () => {
+      try {
+        const response = await fetch(`${apiBase}/storage/videos`);
+        if (response.ok) {
+          const data = await response.json();
+          const backendVideos: GeneratedVideo[] = (data.videos || []).map((vid: any) => ({
+            id: vid.id,
+            mp4Base64: vid.mp4_base64 || vid.mp4Base64 || "",
+            durationSeconds: vid.duration_seconds || vid.durationSeconds,
+          })).filter((vid: GeneratedVideo) => vid.mp4Base64);
+          
+          if (backendVideos.length > 0) {
+            setVideos(backendVideos);
+          }
+        }
+      } catch (err) {
+        console.warn("Impossible de charger les vidéos depuis le backend", err);
+      }
+    };
+    
+    loadVideos();
   }, []);
 
   // Vérifier les modèles disponibles au montage
@@ -473,7 +536,7 @@ export default function Home() {
 
         setGenerationProgress(100);
         const newVideo: GeneratedVideo = {
-          id: crypto.randomUUID(),
+          id: payload.video?.id || crypto.randomUUID(),
           mp4Base64: payload.video?.mp4_base64,
           durationSeconds: payload.duration_seconds,
         };
@@ -553,12 +616,63 @@ export default function Home() {
     }
   };
 
-  const handleDeleteImage = (id: string) => {
+  const handleDeleteImage = async (id: string) => {
+    // Supprimer côté backend
+    try {
+      await fetch(`${apiBase}/storage/image/${id}`, { method: "DELETE" });
+    } catch (err) {
+      console.warn("Impossible de supprimer l'image côté backend", err);
+    }
+    
+    // Supprimer côté frontend
     setImages((prev) => {
       const updated = prev.filter((img) => img.id !== id);
       saveImages(updated);
       return updated;
     });
+  };
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || isChatting) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput("");
+    setChatMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    setIsChatting(true);
+
+    try {
+      const response = await fetch(`${apiBase}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            ...chatMessages,
+            { role: "user" as const, content: userMessage },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erreur lors de la communication avec Ollama");
+      }
+
+      const data = await response.json();
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.message.content },
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur de chat");
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Désolé, une erreur s'est produite. Vérifiez que Ollama est démarré.",
+        },
+      ]);
+    } finally {
+      setIsChatting(false);
+    }
   };
 
   // Composant pour afficher une image avec ses métadonnées (Resources used)
@@ -585,7 +699,7 @@ export default function Home() {
       return found?.label || model || "N/A";
     };
 
-    return (
+  return (
       <div className="group relative rounded-3xl border border-white/10 bg-black/30 p-2 transition hover:border-indigo-400">
         <button
           type="button"
@@ -715,48 +829,48 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-950 bg-[radial-gradient(circle_at_top,_#1e293b,_#020617)] text-slate-100">
-      <main className="mx-auto flex max-w-7xl gap-6 px-4 py-10 lg:px-8">
-        <aside className="hidden w-72 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur md:block">
+      <main className="flex w-full gap-6 px-4 py-10 lg:px-8">
+        <aside className="hidden w-56 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur md:block">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
+            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
               Historique
             </h2>
-            <p className="mb-4 mt-1 text-sm text-slate-400">
-              Vos derniers prompts restent hors-ligne.
+            <p className="mb-3 mt-1 text-[11px] text-slate-400">
+              Prompts hors-ligne.
             </p>
-            <div className="space-y-3 overflow-y-auto pr-1 max-h-[75vh]">
+            <div className="space-y-2 overflow-y-auto pr-1 max-h-[75vh]">
               {history.length === 0 && (
-                <p className="text-sm text-slate-500">
-                  Aucune génération pour l&apos;instant.
+                <p className="text-[11px] text-slate-500">
+                  Aucune génération.
                 </p>
               )}
               {history.map((entry) => (
                 <div
                   key={entry.id}
-                  className="group relative flex items-start gap-2 rounded-2xl border border-white/10 bg-slate-900/60 p-3 transition hover:border-white/30"
+                  className="group relative flex items-start gap-2 rounded-xl border border-white/10 bg-slate-900/60 p-2 transition hover:border-white/30"
                 >
                   <button
                     type="button"
                     onClick={() => handleLoadHistory(entry)}
-                    className="flex flex-1 items-center gap-3 text-left"
+                    className="flex flex-1 items-center gap-2 text-left"
                   >
                     {entry.thumbnail ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={entry.thumbnail}
                         alt="miniature"
-                        className="h-14 w-14 rounded-xl object-cover"
+                        className="h-10 w-10 rounded-lg object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-800 text-xs text-slate-400">
-                        {entry.model}
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-[10px] text-slate-400 flex-shrink-0">
+                        {entry.model.substring(0, 4)}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="line-clamp-2 text-sm font-medium text-white">
+                      <p className="line-clamp-2 text-[11px] font-medium text-white leading-tight">
                         {entry.prompt}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-[10px] text-slate-500 mt-0.5">
                         {new Date(entry.timestamp).toLocaleTimeString("fr-FR", {
                           hour: "2-digit",
                           minute: "2-digit",
@@ -767,8 +881,8 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => handleDeleteHistory(entry.id)}
-                    className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-slate-900/80 text-[11px] text-slate-400 opacity-0 transition group-hover:opacity-100 hover:border-rose-400 hover:text-rose-200"
-                    title="Supprimer cet historique"
+                    className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full border border-white/15 bg-slate-900/80 text-[10px] text-slate-400 opacity-0 transition group-hover:opacity-100 hover:border-rose-400 hover:text-rose-200"
+                    title="Supprimer"
                   >
                     ×
                   </button>
@@ -816,23 +930,36 @@ export default function Home() {
                 >
                   Vidéo (beta)
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("chat")}
+                  className={`rounded-full px-3 py-1 border ${
+                    mode === "chat"
+                      ? "bg-white text-slate-900 border-white"
+                      : "bg-slate-900/60 text-slate-300 border-white/20"
+                  }`}
+                >
+                  Chat IA Locale
+                </button>
               </div>
             </div>
           </header>
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-            <div className="space-y-6 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl">
+            <div className="w-full space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl">
+              {(mode === "image" || mode === "video") && (
+                <>
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center mb-1.5">
                   <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                     Prompt
                   </label>
-                  <div className="flex gap-1">
+                  <div className="ml-auto grid grid-cols-2 gap-1">
                     {promptPresets.map((preset) => (
                       <button
                         key={preset.name}
                         onClick={() => handleLoadPreset(preset)}
-                        className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                        className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300 transition hover:bg-slate-800 hover:text-white"
                         title={preset.description}
                       >
                         {preset.name}
@@ -841,7 +968,7 @@ export default function Home() {
                   </div>
                 </div>
                 <textarea
-                  className="min-h-[120px] w-full rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-sm text-white outline-none transition focus:border-indigo-400"
+                  className="min-h-[70px] w-full rounded-xl border border-white/10 bg-slate-900/60 p-2.5 text-xs text-white outline-none transition focus:border-indigo-400"
                   placeholder="Texte principal qui décrit la scène..."
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
@@ -853,20 +980,20 @@ export default function Home() {
                   Negative prompt
                 </label>
                 <textarea
-                  className="mt-2 min-h-[80px] w-full rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-sm text-white outline-none transition focus:border-rose-400"
+                  className="mt-1.5 min-h-[50px] w-full rounded-xl border border-white/10 bg-slate-900/60 p-2.5 text-xs text-white outline-none transition focus:border-rose-400"
                   placeholder="Ce que vous ne voulez pas voir…"
                   value={negativePrompt}
                   onChange={(event) => setNegativePrompt(event.target.value)}
                 />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                     Sampler
                   </p>
                   <select
-                    className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-sm text-white"
+                    className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs text-white"
                     value={sampler}
                     onChange={(event) => setSampler(event.target.value as Sampler)}
                   >
@@ -876,17 +1003,17 @@ export default function Home() {
                       </option>
                     ))}
                   </select>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Euler A & DPM++ conseillés pour un usage général.
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Euler A & DPM++ conseillés.
                   </p>
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-1.5">
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                       Résolution
                     </p>
-                    <label className="flex items-center gap-2 text-[10px] text-slate-400">
+                    <label className="flex items-center gap-1.5 text-[10px] text-slate-400">
                       <input
                         type="checkbox"
                         checked={useAspectRatio}
@@ -908,7 +1035,7 @@ export default function Home() {
                   {!useAspectRatio ? (
                     <>
                       <select
-                        className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-sm text-white"
+                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs text-white"
                         value={resolution}
                         onChange={(event) =>
                           setResolution(event.target.value as Resolution)
@@ -920,18 +1047,18 @@ export default function Home() {
                           </option>
                         ))}
                       </select>
-                      <p className="mt-2 text-xs text-slate-500">
+                      <p className="mt-1 text-[10px] text-slate-500">
                         {resolutions.find((item) => item.value === resolution)?.hint}
                       </p>
                     </>
                   ) : (
-                    <div className="mt-2 space-y-3">
+                    <div className="mt-1.5 space-y-2">
                       <div>
                         <label className="text-[10px] uppercase tracking-wider text-slate-400">
                           Ratio d&apos;aspect
                         </label>
                         <select
-                          className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900/60 p-2 text-sm text-white"
+                          className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900/60 p-1.5 text-xs text-white"
                           value={aspectRatio}
                           onChange={(e) => {
                             setAspectRatio(e.target.value);
@@ -970,7 +1097,7 @@ export default function Home() {
                                 setCustomHeight(Math.round(w * ratio));
                               }
                             }}
-                            className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white"
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900/60 px-2 py-1.5 text-xs text-white"
                           />
                         </div>
                         <div>
@@ -993,23 +1120,23 @@ export default function Home() {
                                 setCustomWidth(Math.round(h * ratio));
                               }
                             }}
-                            className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white"
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900/60 px-2 py-1.5 text-xs text-white"
                           />
                         </div>
                       </div>
-                      <p className="text-[10px] text-slate-500">
-                        Dimensions personnalisées (multiples de 64 recommandés)
+                      <p className="text-[9px] text-slate-500">
+                        Dimensions personnalisées (multiples de 64)
                       </p>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="grid gap-6 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
                     <span>Steps</span>
-                    <span className="text-[11px] text-slate-300">{stepsHint}</span>
+                    <span className="text-[10px] text-slate-300">{stepsHint}</span>
                   </div>
                   <input
                     type="range"
@@ -1017,15 +1144,15 @@ export default function Home() {
                     max={60}
                     value={steps}
                     onChange={(event) => setSteps(Number(event.target.value))}
-                    className="mt-3 w-full accent-indigo-400"
+                    className="mt-2 w-full accent-indigo-400"
                   />
-                  <p className="mt-2 text-sm font-semibold text-white">{steps} itérations</p>
+                  <p className="mt-1 text-xs font-semibold text-white">{steps} itérations</p>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
                     <span>CFG Scale</span>
-                    <span className="text-[11px] text-slate-300">{cfgHint}</span>
+                    <span className="text-[10px] text-slate-300">{cfgHint}</span>
                   </div>
                   <input
                     type="range"
@@ -1034,43 +1161,43 @@ export default function Home() {
                     step={0.5}
                     value={cfgScale}
                     onChange={(event) => setCfgScale(Number(event.target.value))}
-                    className="mt-3 w-full accent-indigo-400"
+                    className="mt-2 w-full accent-indigo-400"
                   />
-                  <p className="mt-2 text-sm font-semibold text-white">
+                  <p className="mt-1 text-xs font-semibold text-white">
                     Intensité : {cfgScale.toFixed(1)}
-          </p>
-        </div>
+                  </p>
+                </div>
               </div>
-            </div>
+                </>
+              )}
 
-            <div className="space-y-6 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl">
+            <div className="w-full space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                   Choisir le modèle (CivitAI-like)
                 </p>
-                <div className="mt-3 space-y-2">
+                <div className="mt-2 space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
                   {models.map((item) => (
                     <label
                       key={item.value}
-                      className={`flex cursor-pointer items-center justify-between rounded-2xl border p-3 text-sm ${
+                      className={`flex cursor-pointer items-center justify-between rounded-xl border p-2 text-xs ${
                         model === item.value
                           ? "border-indigo-400 bg-indigo-400/10 text-white"
                           : "border-white/10 text-slate-300"
                       } ${!item.available ? "cursor-not-allowed opacity-60" : "hover:border-white/30"}`}
                     >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold">{item.label}</p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-semibold text-xs truncate">{item.label}</p>
                           {item.highlight && (
-                            <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-200">
+                            <span className="rounded-full bg-indigo-500/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-indigo-200 flex-shrink-0">
                               {item.highlight}
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-400">{item.note}</p>
                         {!item.available && (
-                          <p className="text-[10px] text-amber-200">
-                            Disponible prochainement – utilisez SDXL pour la meilleure qualité.
+                          <p className="text-[9px] text-amber-200 mt-0.5">
+                            Non disponible
                           </p>
                         )}
                       </div>
@@ -1080,7 +1207,7 @@ export default function Home() {
                         value={item.value}
                         checked={model === item.value}
                         onChange={() => item.available && setModel(item.value)}
-                        className="accent-indigo-400"
+                        className="accent-indigo-400 ml-2 flex-shrink-0"
                         disabled={!item.available}
                       />
                     </label>
@@ -1088,19 +1215,19 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                     Seed
                   </p>
                   <input
-                    className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-sm text-white"
+                    className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs text-white"
                     type="number"
                     value={seed}
                     onChange={(event) => setSeed(event.target.value)}
                     placeholder="-1 pour aléatoire"
                   />
-                  <p className="mt-2 text-xs text-slate-500">-1 = seed aléatoire</p>
+                  <p className="mt-1 text-[10px] text-slate-500">-1 = seed aléatoire</p>
                 </div>
 
                 <div>
@@ -1108,25 +1235,25 @@ export default function Home() {
                     Clip skip
                   </p>
                   <input
-                    className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-sm text-white"
+                    className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs text-white"
                     type="number"
                     min={1}
                     max={12}
                     value={clipSkip}
                     onChange={(event) => setClipSkip(Number(event.target.value))}
                   />
-                  <p className="mt-2 text-xs text-slate-500">2 recommandé pour certains modèles SDXL.</p>
+                  <p className="mt-1 text-[10px] text-slate-500">2 recommandé SDXL.</p>
                 </div>
               </div>
 
-              <div className="border-t border-white/5 pt-5">
+              <div className="border-t border-white/5 pt-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                       Styles / LoRA
                     </p>
-                    <p className="text-[11px] text-slate-500">
-                      Combinez plusieurs LoRA comme sur Leonardo.ai
+                    <p className="text-[10px] text-slate-500">
+                      Combinez plusieurs LoRA
                     </p>
                   </div>
                   {selectedLoras.length > 0 && (
@@ -1139,36 +1266,36 @@ export default function Home() {
                   )}
                 </div>
                 {availableLoras.length === 0 ? (
-                  <p className="mt-3 rounded-2xl border border-dashed border-white/10 p-3 text-xs text-slate-400">
+                  <p className="mt-2 rounded-xl border border-dashed border-white/10 p-2 text-[10px] text-slate-400">
                     Ajoutez vos fichiers LoRA dans <code>backend/models/lora</code> puis rechargez la page.
                   </p>
                 ) : (
-                  <div className="mt-4 space-y-3">
+                  <div className="mt-2 space-y-2 max-h-[250px] overflow-y-auto pr-1">
                     {availableLoras.map((option) => {
                       const active = selectedLoras.find((item) => item.key === option.key);
                       return (
                         <div
                           key={option.key}
-                          className={`rounded-2xl border p-3 ${
+                          className={`rounded-xl border p-2 ${
                             active ? "border-indigo-400 bg-indigo-500/10" : "border-white/10 bg-slate-900/40"
                           }`}
                         >
-                          <label className="flex cursor-pointer items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-white">{option.label}</p>
+                          <label className="flex cursor-pointer items-center justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-white truncate">{option.label}</p>
                               {option.description && (
-                                <p className="text-[11px] text-slate-400">{option.description}</p>
+                                <p className="text-[10px] text-slate-400 truncate">{option.description}</p>
                               )}
                             </div>
                             <input
                               type="checkbox"
                               checked={!!active}
                               onChange={() => handleToggleLora(option.key)}
-                              className="h-4 w-4 accent-indigo-400"
+                              className="h-3.5 w-3.5 accent-indigo-400 flex-shrink-0"
                             />
                           </label>
                           {active && (
-                            <div className="mt-3 space-y-2">
+                            <div className="mt-2 space-y-1.5">
                               <input
                                 type="range"
                                 min={0}
@@ -1180,7 +1307,7 @@ export default function Home() {
                                 }
                                 className="w-full accent-indigo-400"
                               />
-                              <div className="flex items-center justify-between text-xs text-slate-300">
+                              <div className="flex items-center justify-between text-[10px] text-slate-300">
                                 <span>Poids</span>
                                 <span className="font-semibold">{active.weight.toFixed(2)}</span>
                               </div>
@@ -1193,14 +1320,59 @@ export default function Home() {
                 )}
               </div>
 
+              {(mode === "image" || mode === "video") && (
+                <button
+                  onClick={handleGenerate}
+                  disabled={isGenerating}
+                  className="relative flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? (
+                    <>
+                      <span className="mr-2">Génération en cours…</span>
+                      {generationProgress !== null && generationProgress < 100 && (
+                        <span className="text-[10px] opacity-75">
+                          {Math.round(generationProgress)}%
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    "Generate"
+                  )}
+                </button>
+              )}
+
+              {generationProgress !== null && generationProgress < 100 && (
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
+                    style={{ width: `${generationProgress}%` }}
+                  />
+                </div>
+              )}
+
+              {lastDuration !== null && (
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Temps&nbsp;:{" "}
+                  <span className="font-semibold text-slate-100">
+                    {lastDuration.toFixed(1)}&nbsp;s
+                  </span>
+                </p>
+              )}
+
+              {error && (
+                <p className="rounded-xl border border-rose-400/40 bg-rose-500/10 p-2 text-xs text-rose-200">
+                  {error}
+                </p>
+              )}
+
               {mode === "image" && (
-                <div className="grid gap-4 md:grid-cols-2 mt-2">
+                <div className="grid gap-3 md:grid-cols-2">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                       Image count
                     </p>
                     <input
-                      className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-sm text-white"
+                      className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs text-white"
                       type="number"
                       min={1}
                       max={4}
@@ -1209,21 +1381,21 @@ export default function Home() {
                         setImageCount(Math.min(4, Math.max(1, Number(event.target.value))))
                       }
                     />
-                    <p className="mt-2 text-xs text-slate-500">Jusqu&apos;à 4 images.</p>
+                    <p className="mt-1 text-[10px] text-slate-500">Jusqu&apos;à 4 images.</p>
                   </div>
                 </div>
               )}
 
               {mode === "video" && (
                 <>
-                  <div className="mt-4">
+                  <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                       Image de départ (PNG/JPEG)
                     </p>
                     <input
                       type="file"
                       accept="image/*"
-                      className="mt-2 text-xs text-slate-300"
+                      className="mt-1.5 text-[10px] text-slate-300"
                       onChange={async (event) => {
                         const file = event.target.files?.[0];
                         if (!file) {
@@ -1241,64 +1413,63 @@ export default function Home() {
                         reader.readAsDataURL(file);
                       }}
                     />
-                    <p className="mt-2 text-[11px] text-slate-500">
-                      Obligatoire pour la vidéo pour le moment (l&apos;animation part de cette image).
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Obligatoire pour la vidéo.
                     </p>
                   </div>
 
-                  <div className="mt-4">
-                    <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      Durée de la vidéo (secondes)
-                    </label>
-                    <input
-                      type="number"
-                      min={0.5}
-                      max={5}
-                      step={0.1}
-                      value={videoDuration}
-                      onChange={(e) => {
-                        const duration = Number(e.target.value);
-                        setVideoDuration(duration);
-                        // Calcule le nombre de frames nécessaire
-                        const calculatedFrames = Math.round(duration * fps);
-                        // Limite entre 6 et 16 frames
-                        const clampedFrames = Math.max(6, Math.min(16, calculatedFrames));
-                        setNumFrames(clampedFrames);
-                      }}
-                      className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
-                    />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Durée cible (0.5-5s). Frames calculés: {numFrames} ({(numFrames / fps).toFixed(2)}s réelle)
-                    </p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                        Durée (s)
+                      </label>
+                      <input
+                        type="number"
+                        min={0.5}
+                        max={5}
+                        step={0.1}
+                        value={videoDuration}
+                        onChange={(e) => {
+                          const duration = Number(e.target.value);
+                          setVideoDuration(duration);
+                          const calculatedFrames = Math.round(duration * fps);
+                          const clampedFrames = Math.max(6, Math.min(16, calculatedFrames));
+                          setNumFrames(clampedFrames);
+                        }}
+                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs text-white"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        {numFrames} frames ({(numFrames / fps).toFixed(2)}s)
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                        FPS
+                      </label>
+                      <input
+                        type="number"
+                        min={3}
+                        max={30}
+                        value={fps}
+                        onChange={(e) => {
+                          const newFps = Number(e.target.value);
+                          setFps(newFps);
+                          const calculatedFrames = Math.round(videoDuration * newFps);
+                          const clampedFrames = Math.max(6, Math.min(16, calculatedFrames));
+                          setNumFrames(clampedFrames);
+                        }}
+                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs text-white"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        Recommandé: 6-8
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="mt-4">
+                  <div>
                     <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      FPS (Images par seconde)
-                    </label>
-                    <input
-                      type="number"
-                      min={3}
-                      max={30}
-                      value={fps}
-                      onChange={(e) => {
-                        const newFps = Number(e.target.value);
-                        setFps(newFps);
-                        // Recalcule les frames pour maintenir la durée
-                        const calculatedFrames = Math.round(videoDuration * newFps);
-                        const clampedFrames = Math.max(6, Math.min(16, calculatedFrames));
-                        setNumFrames(clampedFrames);
-                      }}
-                      className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
-                    />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Vitesse de lecture (3-30, recommandé: 6-8)
-                    </p>
-                  </div>
-
-                  <div className="mt-4">
-                    <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      Nombre de frames (avancé)
+                      Frames (avancé)
                     </label>
                     <input
                       type="number"
@@ -1308,59 +1479,83 @@ export default function Home() {
                       onChange={(e) => {
                         const frames = Number(e.target.value);
                         setNumFrames(frames);
-                        // Met à jour la durée estimée
                         setVideoDuration(frames / fps);
                       }}
-                      className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+                      className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs text-white"
                     />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Nombre d&apos;images (6-16, recommandé: 8 pour 8 Go VRAM). Durée: {(numFrames / fps).toFixed(2)}s
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Durée: {(numFrames / fps).toFixed(2)}s
                     </p>
                   </div>
                 </>
               )}
 
-              <button
-                onClick={handleGenerate}
-                disabled={isGenerating}
-                className="relative flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isGenerating ? (
-                  <>
-                    <span className="mr-2">Génération en cours…</span>
-                    {generationProgress !== null && generationProgress < 100 && (
-                      <span className="text-xs opacity-75">
-                        {Math.round(generationProgress)}%
-                      </span>
+              {mode === "chat" && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4 max-h-[500px] overflow-y-auto space-y-4">
+                    {chatMessages.length === 0 && (
+                      <p className="text-sm text-slate-400 text-center py-8">
+                        Commencez une conversation avec l&apos;IA locale. Vous pouvez lui demander de créer ou améliorer vos prompts.
+                      </p>
                     )}
-                  </>
-                ) : (
-                  "Generate"
-                )}
-              </button>
-
-              {generationProgress !== null && generationProgress < 100 && (
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
-                    style={{ width: `${generationProgress}%` }}
-                  />
+                    {chatMessages.map((msg, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+                            msg.role === "user"
+                              ? "bg-indigo-500/20 text-indigo-100"
+                              : "bg-slate-800/60 text-slate-200"
+                          }`}
+                        >
+                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {isChatting && (
+                      <div className="flex justify-start">
+                        <div className="rounded-2xl bg-slate-800/60 px-4 py-2">
+                          <p className="text-sm text-slate-400">Réflexion...</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendMessage();
+                        }
+                      }}
+                      placeholder="Tapez votre message..."
+                      disabled={isChatting}
+                      className="flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={isChatting || !chatInput.trim()}
+                      className="rounded-xl bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Envoyer
+                    </button>
+                    <button
+                      onClick={() => {
+                        setChatMessages([]);
+                        setChatInput("");
+                      }}
+                      className="rounded-xl border border-white/10 bg-slate-900/60 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+                      title="Réinitialiser la conversation"
+                    >
+                      Reset
+                    </button>
+                  </div>
                 </div>
-              )}
-
-              {lastDuration !== null && (
-                <p className="mt-2 text-xs text-slate-400">
-                  Temps de génération&nbsp;:{" "}
-                  <span className="font-semibold text-slate-100">
-                    {lastDuration.toFixed(1)}&nbsp;s
-                  </span>
-                </p>
-              )}
-
-              {error && (
-                <p className="rounded-2xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm text-rose-200">
-                  {error}
-                </p>
               )}
 
               <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4 text-xs text-slate-400">
@@ -1368,6 +1563,7 @@ export default function Home() {
                 <span className="font-semibold text-white">{apiBase}/generate</span>
                 . Configurez la variable <code>NEXT_PUBLIC_API_BASE_URL</code> si besoin.
               </div>
+            </div>
             </div>
           </div>
 

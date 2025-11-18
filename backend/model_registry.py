@@ -114,6 +114,12 @@ LORA_LIBRARY: Dict[str, Dict[str, str | float]] = {
         "default_weight": 0.5,
         "description": "Style Incase v3.0 optimisé PonyXL",
     },
+    "g0th1c-pxl": {
+        "label": "G0th1c PXL",
+        "path": os.getenv("LORA_G0TH1C_PXL", "models/lora/g0th1cPXL.safetensors"),
+        "default_weight": 0.5,
+        "description": "Style gothique optimisé PonyXL",
+    },
 }
 
 

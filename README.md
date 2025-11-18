@@ -1,4 +1,4 @@
-# Générateur IA d’Images (Next.js + FastAPI)
+git stash# Générateur IA d’Images (Next.js + FastAPI)
 
 Projet local complet suivant le cahier des charges :
 
@@ -25,7 +25,58 @@ Vous pouvez ajuster l’URL du backend avec `NEXT_PUBLIC_API_BASE_URL` (créez `
 
 ### Backend
 
-Voir `backend/README.md` pour l’installation de Torch + Diffusers et les variables modèle (`MODEL_SDXL`, etc.). Le service expose `POST /generate` qui renvoie les images en base64.
+Voir `backend/README.md` pour l'installation de Torch + Diffusers et les variables modèle (`MODEL_SDXL`, etc.). Le service expose `POST /generate` qui renvoie les images en base64.
+
+**Démarrer le backend :**
+
+```powershell
+cd backend
+python main.py
+# Ou avec uvicorn directement :
+python -m uvicorn main:app --reload --port 8000
+```
+
+Le backend sera accessible sur `http://localhost:8000`
+
+### Ollama (IA de texte pour améliorer les prompts)
+
+Ollama doit être installé et démarré pour utiliser la fonctionnalité de chat IA locale.
+
+**Démarrer Ollama :**
+
+```powershell
+# Si Ollama est installé mais pas en service :
+ollama serve
+```
+
+Ou vérifiez qu'il tourne déjà :
+```powershell
+# Testez si Ollama répond
+curl http://127.0.0.1:11434/api/tags
+```
+
+Par défaut, Ollama écoute sur `http://127.0.0.1:11434`. Vous pouvez configurer l'URL via les variables d'environnement `OLLAMA_BASE_URL` et `OLLAMA_MODEL` dans le backend.
+
+## Démarrage complet (3 terminaux)
+
+**Terminal 1 - Ollama :**
+```powershell
+ollama serve
+```
+
+**Terminal 2 - Backend FastAPI :**
+```powershell
+cd backend
+python main.py
+```
+
+**Terminal 3 - Frontend Next.js :**
+```powershell
+cd frontend
+npm run dev
+```
+
+> **Note :** Si Ollama est installé en service Windows, il démarre automatiquement et vous n'avez pas besoin du Terminal 1.
 
 ## Fonctionnalités couvertes
 

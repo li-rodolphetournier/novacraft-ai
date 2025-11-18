@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import random
 import tempfile
 import time
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, Literal, Tuple
+from typing import Any, Dict, Literal, Tuple
 
 import imageio
 import numpy as np
+import requests
 import torch
 from diffusers import (
     DDIMScheduler,
@@ -41,6 +44,19 @@ ResolutionKey = Literal["512x512", "768x768", "1024x1024", "1536x1536"]
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+
+# Chemins de stockage
+STORAGE_DIR = Path(__file__).parent / "storage"
+STORAGE_IMAGES_DIR = STORAGE_DIR / "images"
+STORAGE_VIDEOS_DIR = STORAGE_DIR / "videos"
+STORAGE_IMAGES_JSON = STORAGE_DIR / "gallery-images.json"
+STORAGE_VIDEOS_JSON = STORAGE_DIR / "gallery-videos.json"
+
+# Créer les dossiers s'ils n'existent pas
+STORAGE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+STORAGE_VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class GenerateRequest(BaseModel):
@@ -98,6 +114,24 @@ class AppliedLoRA(BaseModel):
     type: str = "LoRA"
 
 
+class ChatMessage(BaseModel):
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+    model: str | None = None
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    top_p: float = Field(default=0.9, ge=0.0, le=1.0)
+    max_tokens: int | None = Field(default=None, ge=16, le=4096)
+
+
+class ChatResponseModel(BaseModel):
+    message: ChatMessage
+    raw: Dict[str, Any] | None = None
+
+
 class GenerateVideoRequest(BaseModel):
     prompt: str = Field(..., min_length=3)
     negative_prompt: str | None = ""
@@ -110,6 +144,7 @@ class GenerateVideoRequest(BaseModel):
 
 class GeneratedVideo(BaseModel):
     mp4_base64: str
+    id: str | None = None
 
 
 class GenerateVideoResponse(BaseModel):
@@ -255,6 +290,44 @@ def _reset_pipeline_adapters(pipe):
             pipe.disable_lora()
 
 
+def _load_storage_json(json_path: Path) -> list[Dict[str, Any]]:
+    """Charge les métadonnées depuis le JSON de stockage."""
+    if json_path.exists():
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
+    return []
+
+
+def _save_storage_json(json_path: Path, data: list[Dict[str, Any]]) -> None:
+    """Sauvegarde les métadonnées dans le JSON de stockage."""
+    try:
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except IOError as err:
+        print(f"[WARN] Impossible de sauvegarder {json_path}: {err}")
+
+
+def _save_image_file(image_id: str, base64_data: str) -> Path:
+    """Sauvegarde une image en fichier PNG et retourne le chemin."""
+    img_bytes = base64.b64decode(base64_data)
+    img_path = STORAGE_IMAGES_DIR / f"{image_id}.png"
+    with open(img_path, "wb") as f:
+        f.write(img_bytes)
+    return img_path
+
+
+def _save_video_file(video_id: str, base64_data: str) -> Path:
+    """Sauvegarde une vidéo en fichier MP4 et retourne le chemin."""
+    video_bytes = base64.b64decode(base64_data)
+    video_path = STORAGE_VIDEOS_DIR / f"{video_id}.mp4"
+    with open(video_path, "wb") as f:
+        f.write(video_bytes)
+    return video_path
+
+
 def _apply_request_loras(
     pipe, payload: GenerateRequest
 ) -> list[AppliedLoRA]:
@@ -362,6 +435,50 @@ def list_loras():
     return {"loras": items}
 
 
+@app.post("/chat", response_model=ChatResponseModel)
+def chat_with_ollama(payload: ChatRequest):
+    if not payload.messages:
+        raise HTTPException(status_code=400, detail="Fournissez au moins un message.")
+
+    request_payload: Dict[str, Any] = {
+        "model": payload.model or OLLAMA_MODEL,
+        "messages": [{"role": msg.role, "content": msg.content} for msg in payload.messages],
+        "stream": False,
+        "options": {
+            "temperature": payload.temperature,
+            "top_p": payload.top_p,
+        },
+    }
+    if payload.max_tokens:
+        request_payload["options"]["num_predict"] = payload.max_tokens
+
+    try:
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json=request_payload,
+            timeout=120,
+        )
+    except requests.RequestException as err:
+        raise HTTPException(status_code=502, detail=f"Ollama injoignable: {err}") from err
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Erreur Ollama: {response.text}",
+        )
+
+    resp_json = response.json()
+    message_data = resp_json.get("message")
+    if not message_data:
+        raise HTTPException(status_code=500, detail="Réponse Ollama invalide.")
+
+    chat_message = ChatMessage(
+        role=message_data.get("role", "assistant"),
+        content=message_data.get("content", ""),
+    )
+    return ChatResponseModel(message=chat_message, raw=resp_json)
+
+
 @app.post("/generate", response_model=GenerateResponse)
 def generate(payload: GenerateRequest):
     if payload.model not in ENABLED_MODELS:
@@ -428,23 +545,57 @@ def generate(payload: GenerateRequest):
         _reset_pipeline_adapters(pipe)
     duration = time.perf_counter() - start
 
-    images = [
-        GeneratedImage(
-            id=f"{payload.model}-{idx}",
-            seed=seed + idx,
-            base64=pil_to_base64(image),
-            model=payload.model,
-            sampler=payload.sampler,
-            steps=payload.steps,
-            cfg_scale=payload.cfg_scale,
-            resolution=f"{width}x{height}",
-            prompt=payload.prompt,
-            negative_prompt=payload.negative_prompt or "",
-            clip_skip=payload.clip_skip,
-            loras=applied_loras_meta,
+    images = []
+    for idx, image in enumerate(result.images):
+        image_id = f"{payload.model}-{seed + idx}-{int(time.time())}"
+        base64_data = pil_to_base64(image)
+        
+        # Sauvegarder l'image en fichier
+        _save_image_file(image_id, base64_data)
+        
+        # Sauvegarder les métadonnées
+        image_meta = {
+            "id": image_id,
+            "seed": seed + idx,
+            "model": payload.model,
+            "sampler": payload.sampler,
+            "steps": payload.steps,
+            "cfg_scale": payload.cfg_scale,
+            "resolution": f"{width}x{height}",
+            "prompt": payload.prompt,
+            "negative_prompt": payload.negative_prompt or "",
+            "clip_skip": payload.clip_skip,
+            "loras": [
+                {"key": lora.key, "label": lora.label, "weight": lora.weight, "type": lora.type}
+                for lora in applied_loras_meta
+            ] if applied_loras_meta else [],
+            "timestamp": datetime.now().isoformat(),
+            "file_path": f"images/{image_id}.png",
+        }
+        
+        # Ajouter aux métadonnées stockées
+        stored_images = _load_storage_json(STORAGE_IMAGES_JSON)
+        stored_images.append(image_meta)
+        # Garder seulement les 1000 dernières images
+        stored_images = stored_images[-1000:]
+        _save_storage_json(STORAGE_IMAGES_JSON, stored_images)
+        
+        images.append(
+            GeneratedImage(
+                id=image_id,
+                seed=seed + idx,
+                base64=base64_data,
+                model=payload.model,
+                sampler=payload.sampler,
+                steps=payload.steps,
+                cfg_scale=payload.cfg_scale,
+                resolution=f"{width}x{height}",
+                prompt=payload.prompt,
+                negative_prompt=payload.negative_prompt or "",
+                clip_skip=payload.clip_skip,
+                loras=applied_loras_meta,
+            )
         )
-        for idx, image in enumerate(result.images)
-    ]
 
     return GenerateResponse(
         images=images,
@@ -536,15 +687,101 @@ def generate_video(payload: GenerateVideoRequest):
         with open(tmp_path, "rb") as f:
             mp4_bytes = f.read()
         mp4_b64 = base64.b64encode(mp4_bytes).decode("utf-8")
+        
+        # Sauvegarder la vidéo
+        video_id = f"video-{seed}-{int(time.time())}"
+        _save_video_file(video_id, mp4_b64)
+        
+        # Sauvegarder les métadonnées
+        video_meta = {
+            "id": video_id,
+            "seed": seed,
+            "num_frames": payload.num_frames,
+            "fps": payload.fps,
+            "prompt": payload.prompt,
+            "negative_prompt": payload.negative_prompt or "",
+            "timestamp": datetime.now().isoformat(),
+            "file_path": f"videos/{video_id}.mp4",
+            "duration_seconds": duration,
+        }
+        
+        stored_videos = _load_storage_json(STORAGE_VIDEOS_JSON)
+        stored_videos.append(video_meta)
+        stored_videos = stored_videos[-500:]  # Garder les 500 dernières vidéos
+        _save_storage_json(STORAGE_VIDEOS_JSON, stored_videos)
     finally:
         # Nettoyer le fichier temporaire
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
     return GenerateVideoResponse(
-        video=GeneratedVideo(mp4_base64=mp4_b64),
+        video=GeneratedVideo(mp4_base64=mp4_b64, id=video_id),
         duration_seconds=duration,
     )
+
+
+@app.get("/storage/images")
+def get_stored_images():
+    """Récupère toutes les images sauvegardées avec leurs métadonnées."""
+    stored = _load_storage_json(STORAGE_IMAGES_JSON)
+    # Charger les images en base64 depuis les fichiers
+    for item in stored:
+        file_path = STORAGE_IMAGES_DIR / f"{item['id']}.png"
+        if file_path.exists():
+            with open(file_path, "rb") as f:
+                img_bytes = f.read()
+                item["base64"] = base64.b64encode(img_bytes).decode("utf-8")
+        else:
+            item["base64"] = None
+    return {"images": stored}
+
+
+@app.get("/storage/videos")
+def get_stored_videos():
+    """Récupère toutes les vidéos sauvegardées avec leurs métadonnées."""
+    stored = _load_storage_json(STORAGE_VIDEOS_JSON)
+    # Charger les vidéos en base64 depuis les fichiers
+    for item in stored:
+        file_path = STORAGE_VIDEOS_DIR / f"{item['id']}.mp4"
+        if file_path.exists():
+            with open(file_path, "rb") as f:
+                video_bytes = f.read()
+                item["mp4_base64"] = base64.b64encode(video_bytes).decode("utf-8")
+        else:
+            item["mp4_base64"] = None
+    return {"videos": stored}
+
+
+@app.delete("/storage/image/{image_id}")
+def delete_stored_image(image_id: str):
+    """Supprime une image et ses métadonnées."""
+    # Supprimer le fichier
+    file_path = STORAGE_IMAGES_DIR / f"{image_id}.png"
+    if file_path.exists():
+        file_path.unlink()
+    
+    # Supprimer des métadonnées
+    stored = _load_storage_json(STORAGE_IMAGES_JSON)
+    stored = [img for img in stored if img.get("id") != image_id]
+    _save_storage_json(STORAGE_IMAGES_JSON, stored)
+    
+    return {"status": "deleted", "id": image_id}
+
+
+@app.delete("/storage/video/{video_id}")
+def delete_stored_video(video_id: str):
+    """Supprime une vidéo et ses métadonnées."""
+    # Supprimer le fichier
+    file_path = STORAGE_VIDEOS_DIR / f"{video_id}.mp4"
+    if file_path.exists():
+        file_path.unlink()
+    
+    # Supprimer des métadonnées
+    stored = _load_storage_json(STORAGE_VIDEOS_JSON)
+    stored = [vid for vid in stored if vid.get("id") != video_id]
+    _save_storage_json(STORAGE_VIDEOS_JSON, stored)
+    
+    return {"status": "deleted", "id": video_id}
 
 
 if __name__ == "__main__":
