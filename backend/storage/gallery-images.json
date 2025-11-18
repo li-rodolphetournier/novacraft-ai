@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "id": "sdxl-3884499817-1763462854",
+    "seed": 3884499817,
+    "model": "sdxl",
+    "sampler": "euler",
+    "steps": 30,
+    "cfg_scale": 7.0,
+    "resolution": "1024x1024",
+    "prompt": "un chien cours dans le salon de la maison, high details, realiste",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark",
+    "clip_skip": 2,
+    "loras": [],
+    "timestamp": "2025-11-18T11:47:35.132459",
+    "file_path": "images/sdxl-3884499817-1763462854.png"
+  }
+]

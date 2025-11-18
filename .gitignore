@@ -2,4 +2,5 @@ backend/models/
 backend/models/lora/
 backend/storage/images/
 backend/storage/videos/
+backend/storage/*.json
 
