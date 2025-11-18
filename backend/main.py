@@ -183,7 +183,7 @@ ENABLED_MODELS = {
     key.strip()
     for key in os.getenv(
         "ENABLED_MODELS",
-        "sdxl,cyberrealistic-pony,tsunade-il,wai-illustrious-sdxl,wan22-enhanced-nsfw-camera,hassaku-xl-illustrious-v32,duchaiten-pony-xl",
+        "sdxl,cyberrealistic-pony,tsunade-il,wai-illustrious-sdxl,wan22-enhanced-nsfw-camera,hassaku-xl-illustrious-v32,duchaiten-pony-xl,lucentxl-pony,ponydiffusion-v6-xl,ishtars-gate-nsfw-sfw",
     ).split(",")
     if key.strip()
 }

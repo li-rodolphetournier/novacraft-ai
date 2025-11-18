@@ -343,6 +343,27 @@ export default function Home() {
         available: availableModels.has("duchaiten-pony-xl"),
         nsfw: true,
       },
+      {
+        label: "LucentXL Pony (Klaabu)",
+        value: "lucentxl-pony" as ModelKey,
+        note: "LucentXL pony stylisé",
+        available: availableModels.has("lucentxl-pony"),
+        nsfw: false,
+      },
+      {
+        label: "Pony Diffusion V6 XL",
+        value: "ponydiffusion-v6-xl" as ModelKey,
+        note: "Pony Diffusion V6 XL Start",
+        available: availableModels.has("ponydiffusion-v6-xl"),
+        nsfw: false,
+      },
+      {
+        label: "Ishtar's Gate (NSFW/SFW)",
+        value: "ishtars-gate-nsfw-sfw" as ModelKey,
+        note: "Ishtar's Gate mix NSFW/SFW",
+        available: availableModels.has("ishtars-gate-nsfw-sfw"),
+        nsfw: true,
+      },
     ];
   }, [availableModels]);
 

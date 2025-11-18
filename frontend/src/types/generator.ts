@@ -12,7 +12,10 @@ export type ModelKey =
   | "wai-illustrious-sdxl"
   | "wan22-enhanced-nsfw-camera"
   | "hassaku-xl-illustrious-v32"
-  | "duchaiten-pony-xl";
+  | "duchaiten-pony-xl"
+  | "lucentxl-pony"
+  | "ponydiffusion-v6-xl"
+  | "ishtars-gate-nsfw-sfw";
 
 export type Mode = "image" | "video" | "chat";
 

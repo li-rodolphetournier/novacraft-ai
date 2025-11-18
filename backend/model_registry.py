@@ -18,6 +18,9 @@ ModelKey = Literal[
     "wan22-enhanced-nsfw-camera",
     "hassaku-xl-illustrious-v32",
     "duchaiten-pony-xl",
+    "lucentxl-pony",
+    "ponydiffusion-v6-xl",
+    "ishtars-gate-nsfw-sfw",
 ]
 
 MODEL_CONFIG: Dict[ModelKey, Dict[str, str]] = {
@@ -75,6 +78,24 @@ MODEL_CONFIG: Dict[ModelKey, Dict[str, str]] = {
     "duchaiten-pony-xl": {
         "path": os.getenv(
             "MODEL_DUCHAITEN_PONY_XL", "models/pony-no-score_v4.0.safetensors"
+        ),
+        "variant": "sdxl",
+    },
+    "lucentxl-pony": {
+        "path": os.getenv(
+            "MODEL_LUCENTXL_PONY", "models/lucentxlPonyByKlaabu_b20.safetensors"
+        ),
+        "variant": "sdxl",
+    },
+    "ponydiffusion-v6-xl": {
+        "path": os.getenv(
+            "MODEL_PONYDIFFUSION_V6_XL", "models/ponyDiffusionV6XL_v6StartWithThisOne.safetensors"
+        ),
+        "variant": "sdxl",
+    },
+    "ishtars-gate-nsfw-sfw": {
+        "path": os.getenv(
+            "MODEL_ISHTARS_GATE", "models/ishtarsGateNSFWSFW_v10.safetensors"
         ),
         "variant": "sdxl",
     },
