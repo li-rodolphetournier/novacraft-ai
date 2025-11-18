@@ -93,7 +93,7 @@ class GeneratedImage(BaseModel):
     sampler: SamplerName | None = None
     steps: int | None = None
     cfg_scale: float | None = None
-    resolution: ResolutionKey | None = None
+    resolution: str | None = None
     prompt: str | None = None
     negative_prompt: str | None = None
     clip_skip: int | None = None
