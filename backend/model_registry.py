@@ -12,6 +12,13 @@ ModelKey = Literal[
     "dreamshaper",
     "meinamik",
     "sdxl",
+    "sdxl-turbo",
+    "dreamshaper-xl",
+    "juggernaut-xl",
+    "realvis-xl",
+    "sd-1.5-base",
+    "chilloutmix",
+    "deliberate",
     "cyberrealistic-pony",
     "tsunade-il",
     "wai-illustrious-sdxl",
@@ -99,6 +106,54 @@ MODEL_CONFIG: Dict[ModelKey, Dict[str, str]] = {
         ),
         "variant": "sdxl",
     },
+    "sdxl-turbo": {
+        "path": os.getenv("MODEL_SDXL_TURBO", "models/sdxl_turbo_1.0.safetensors"),
+        "variant": "sdxl",
+    },
+    "dreamshaper-xl": {
+        "path": os.getenv(
+            "MODEL_DREAMSHAPER_XL", "models/DreamShaperXL_v2.0.safetensors"
+        ),
+        "variant": "sdxl",
+    },
+    "juggernaut-xl": {
+        "path": os.getenv(
+            "MODEL_JUGGERNAUT_XL", "models/Juggernaut-XL-v9.safetensors"
+        ),
+        "variant": "sdxl",
+    },
+    "realvis-xl": {
+        "path": os.getenv("MODEL_REALVIS_XL", "models/RealVisXL_V4.0.safetensors"),
+        "variant": "sdxl",
+    },
+    "sd-1.5-base": {
+        "path": os.getenv("MODEL_SD_1_5_BASE", "models/v1-5-pruned.safetensors"),
+        "variant": "sd15",
+    },
+    "chilloutmix": {
+        "path": os.getenv("MODEL_CHILLOUTMIX", "models/chilloutmix.safetensors"),
+        "variant": "sd15",
+    },
+    "deliberate": {
+        "path": os.getenv("MODEL_DELIBERATE", "models/deliberate_v2.safetensors"),
+        "variant": "sd15",
+    },
+    "realistic-vision": {
+        "path": os.getenv(
+            "MODEL_REALISTIC_VISION", "models/Realistic_Vision_V5.1-noVAE.safetensors"
+        ),
+        "variant": "sd15",
+    },
+    "dreamshaper": {
+        "path": os.getenv(
+            "MODEL_DREAMSHAPER", "models/DreamShaper_8_pruned.safetensors"
+        ),
+        "variant": "sd15",
+    },
+    "meinamik": {
+        "path": os.getenv("MODEL_MEINAMIK", "models/MeinaMix_v11.safetensors"),
+        "variant": "sd15",
+    },
 }
 
 MODEL_SOURCES: Dict[ModelKey, Dict[str, str]] = {
@@ -117,6 +172,34 @@ MODEL_SOURCES: Dict[ModelKey, Dict[str, str]] = {
     "meinamik": {
         "repo_id": "Meina/MeinaMix_V11",
         "filename": "MeinaMix_v11.safetensors",
+    },
+    "sdxl-turbo": {
+        "repo_id": "stabilityai/sdxl-turbo",
+        "filename": "sd_xl_turbo_1.0_fp16.safetensors",
+    },
+    "dreamshaper-xl": {
+        "repo_id": "Lykon/DreamShaper-XL",
+        "filename": "DreamShaperXL_v2.0.safetensors",
+    },
+    "juggernaut-xl": {
+        "repo_id": "RunDiffusion/Juggernaut-XL-v9",
+        "filename": "Juggernaut-XL-v9.safetensors",
+    },
+    "realvis-xl": {
+        "repo_id": "SG161222/RealVisXL_V4.0",
+        "filename": "RealVisXL_V4.0.safetensors",
+    },
+    "sd-1.5-base": {
+        "repo_id": "runwayml/stable-diffusion-v1-5",
+        "filename": "v1-5-pruned.safetensors",
+    },
+    "chilloutmix": {
+        "repo_id": "Lykon/chilloutmix",
+        "filename": "chilloutmix.safetensors",
+    },
+    "deliberate": {
+        "repo_id": "XpucT/Deliberate",
+        "filename": "deliberate_v2.safetensors",
     },
 }
 
@@ -188,13 +271,33 @@ def ensure_model_file(model_key: ModelKey) -> Path:
             repo_id=source["repo_id"],
             filename=source["filename"],
             local_dir=str(target_dir),
-            local_dir_use_symlinks=False,
         )
-    except Exception as err:  # pylint: disable=broad-except
+    except FileNotFoundError as err:
         raise FileNotFoundError(
-            f"Impossible de télécharger automatiquement {model_key}. "
-            "Téléchargez le fichier depuis Hugging Face ou définissez MODEL_* vers un chemin valide."
+            f"Fichier '{source['filename']}' introuvable dans le repository '{source['repo_id']}'. "
+            f"Le fichier peut avoir un nom différent ou ne pas être disponible. "
+            f"Vérifiez sur https://huggingface.co/{source['repo_id']}/tree/main pour voir les fichiers disponibles."
         ) from err
+    except Exception as err:  # pylint: disable=broad-except
+        error_msg = str(err)
+        if "401" in error_msg or "Unauthorized" in error_msg:
+            raise FileNotFoundError(
+                f"Authentification requise pour '{source['repo_id']}'. "
+                f"Connectez-vous avec 'huggingface-cli login' ou téléchargez le fichier manuellement depuis "
+                f"https://huggingface.co/{source['repo_id']}"
+            ) from err
+        elif "404" in error_msg or "Not Found" in error_msg:
+            raise FileNotFoundError(
+                f"Repository '{source['repo_id']}' introuvable. "
+                f"Vérifiez que le repository existe sur https://huggingface.co/{source['repo_id']} "
+                f"ou téléchargez le modèle depuis Civitai (https://civitai.com)"
+            ) from err
+        else:
+            raise FileNotFoundError(
+                f"Impossible de télécharger automatiquement {model_key} depuis '{source['repo_id']}'. "
+                f"Erreur: {error_msg}. "
+                f"Téléchargez le fichier manuellement depuis Hugging Face ou Civitai."
+            ) from err
 
     downloaded_path = Path(downloaded)
     if downloaded_path != model_path:

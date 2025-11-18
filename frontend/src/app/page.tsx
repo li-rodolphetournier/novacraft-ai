@@ -146,9 +146,19 @@ export default function Home() {
   useEffect(() => {
     fetch(`${apiBase}/models`)
       .then((res) => res.json())
-      .then((data: { enabled?: string[] }) => {
-        const enabled = new Set<string>(data.enabled || []);
-        setAvailableModels(enabled);
+      .then((data: { enabled?: string[]; models?: Array<{ key: string; installed: boolean; enabled: boolean }> }) => {
+        // Utilise les modèles installés ET activés
+        const available = new Set<string>();
+        if (data.models) {
+          // Filtre les modèles installés et activés
+          data.models
+            .filter((m) => m.installed && m.enabled)
+            .forEach((m) => available.add(m.key));
+        } else if (data.enabled) {
+          // Fallback sur enabled si models n'est pas disponible
+          data.enabled.forEach((key) => available.add(key));
+        }
+        setAvailableModels(available);
       })
       .catch(() => {
         // Ignorer les erreurs, garder les valeurs par défaut

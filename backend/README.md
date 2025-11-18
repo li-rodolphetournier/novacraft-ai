@@ -27,14 +27,43 @@ $env:MODEL_REALISTIC_VISION="models\realisticVision_v51VAE.safetensors"
 $env:ENABLED_MODELS="sdxl,realistic-vision,dreamshaper"
 ```
 
-### Téléchargement automatique (optionnel)
+### Téléchargement automatique depuis Hugging Face
 
-Vous pouvez laisser le backend récupérer les poids manquants automatiquement (via Hugging Face Hub). Certaines cartes exigent un jeton (`huggingface-cli login`).
+Le script `download_models.py` permet de télécharger automatiquement les modèles gratuits depuis Hugging Face.
 
+**Lister les modèles disponibles :**
 ```powershell
 cd backend
-python download_models.py --all   # ou --models sdxl dreamshaper
+python download_models.py --list
 ```
+
+**Télécharger un modèle spécifique :**
+```powershell
+python download_models.py sdxl
+python download_models.py realistic-vision dreamshaper
+```
+
+**Télécharger tous les modèles disponibles :**
+```powershell
+python download_models.py --all
+```
+
+**Modèles gratuits disponibles depuis Hugging Face :**
+
+**SDXL (haute qualité) :**
+- `sdxl` - Stable Diffusion XL Base 1.0
+- `sdxl-turbo` - SDXL Turbo (génération rapide)
+- `dreamshaper-xl` - DreamShaper XL v2.0
+- `juggernaut-xl` - Juggernaut XL v9
+- `realvis-xl` - RealVisXL V4.0
+
+**SD 1.5 (légers, rapides) :**
+- `sd-1.5-base` - Stable Diffusion 1.5 Base
+- `realistic-vision` - Realistic Vision V5.1
+- `dreamshaper` - DreamShaper 8
+- `chilloutmix` - ChilloutMix
+- `deliberate` - Deliberate v2
+- `meinamik` - MeinaMix V11
 
 Au runtime, `main.py` essaie aussi de télécharger le fichier manquant avant de lever une erreur.
 

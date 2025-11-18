@@ -1,1 +1,405 @@
-[]
+[
+  {
+    "id": "d363a785-aed6-40fc-8581-0e6ced167010",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "tsunade-il",
+    "timestamp": "2025-11-18T20:22:48.611907",
+    "thumbnail_id": "tsunade-il-3884499817-1763493768",
+    "settings": {
+      "sampler": "euler",
+      "steps": 28,
+      "cfg_scale": 6.5,
+      "clip_skip": 2,
+      "resolution": "1024x1024",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "1024x1024",
+      "custom_width": 1024,
+      "custom_height": 1024,
+      "loras": []
+    }
+  },
+  {
+    "id": "b71e4a7d-c2c9-4cd3-9440-bc1a857b6870",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "wai-illustrious-sdxl",
+    "timestamp": "2025-11-18T21:18:32.634467",
+    "thumbnail_id": "wai-illustrious-sdxl-3884499817-1763497111",
+    "settings": {
+      "sampler": "euler",
+      "steps": 28,
+      "cfg_scale": 6.5,
+      "clip_skip": 2,
+      "resolution": "1024x1024",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "1024x1024",
+      "custom_width": 1024,
+      "custom_height": 1024,
+      "loras": []
+    }
+  },
+  {
+    "id": "3653ebb4-7de9-4e60-97a5-5c278a072cc7",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "hassaku-xl-illustrious-v32",
+    "timestamp": "2025-11-18T21:21:12.644385",
+    "thumbnail_id": "hassaku-xl-illustrious-v32-3884499817-1763497271",
+    "settings": {
+      "sampler": "euler",
+      "steps": 28,
+      "cfg_scale": 6.5,
+      "clip_skip": 2,
+      "resolution": "1024x1024",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "1024x1024",
+      "custom_width": 1024,
+      "custom_height": 1024,
+      "loras": []
+    }
+  },
+  {
+    "id": "ab9eb43e-a4ef-4216-88ff-d2d81cdb4507",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "hassaku-xl-illustrious-v32",
+    "timestamp": "2025-11-18T21:27:06.436439",
+    "thumbnail_id": "hassaku-xl-illustrious-v32-3884499817-1763497625",
+    "settings": {
+      "sampler": "euler",
+      "steps": 52,
+      "cfg_scale": 6.5,
+      "clip_skip": 2,
+      "resolution": "1024x1024",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "1024x1024",
+      "custom_width": 1024,
+      "custom_height": 1024,
+      "loras": []
+    }
+  },
+  {
+    "id": "d78cedc0-4fdb-4194-88e1-a544532f4868",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "lucentxl-pony",
+    "timestamp": "2025-11-18T21:35:10.290922",
+    "thumbnail_id": "lucentxl-pony-3884499817-1763498109",
+    "settings": {
+      "sampler": "euler",
+      "steps": 52,
+      "cfg_scale": 6.5,
+      "clip_skip": 2,
+      "resolution": "1024x1024",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "1024x1024",
+      "custom_width": 1024,
+      "custom_height": 1024,
+      "loras": []
+    }
+  },
+  {
+    "id": "a1c4a400-dc74-4f01-b440-89ad02315b7d",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "lucentxl-pony",
+    "timestamp": "2025-11-18T21:56:20.523137",
+    "thumbnail_id": "lucentxl-pony-3884499817-1763499376",
+    "settings": {
+      "sampler": "euler",
+      "steps": 52,
+      "cfg_scale": 7.0,
+      "clip_skip": 2,
+      "resolution": "1536x1536",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "1536x1536",
+      "custom_width": 1536,
+      "custom_height": 1536,
+      "loras": []
+    }
+  },
+  {
+    "id": "4586f0a1-391e-4f97-b7c5-a3a410ca9739",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "ponydiffusion-v6-xl",
+    "timestamp": "2025-11-18T22:19:04.514489",
+    "thumbnail_id": "ponydiffusion-v6-xl-3884499817-1763500743",
+    "settings": {
+      "sampler": "euler",
+      "steps": 52,
+      "cfg_scale": 7.0,
+      "clip_skip": 2,
+      "resolution": "1024x1024",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "1024x1024",
+      "custom_width": 1024,
+      "custom_height": 1024,
+      "loras": []
+    }
+  },
+  {
+    "id": "25999232-4e60-4b87-9d58-b1fb007d989c",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "lucentxl-pony",
+    "timestamp": "2025-11-18T22:21:53.311407",
+    "thumbnail_id": "lucentxl-pony-3884499817-1763500912",
+    "settings": {
+      "sampler": "euler",
+      "steps": 56,
+      "cfg_scale": 10.5,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "208e9bfe-e8a8-4a97-bea4-b54e7b0c5735",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "wan22-enhanced-nsfw-camera",
+    "timestamp": "2025-11-18T22:42:12.523280",
+    "thumbnail_id": "wan22-enhanced-nsfw-camera-3884499817-1763502132",
+    "settings": {
+      "sampler": "euler",
+      "steps": 56,
+      "cfg_scale": 10.5,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "7875e429-2710-4033-97f4-57b8f4cfbe2c",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "ishtars-gate-nsfw-sfw",
+    "timestamp": "2025-11-18T23:39:32.901074",
+    "thumbnail_id": "ishtars-gate-nsfw-sfw-3884499817-1763505572",
+    "settings": {
+      "sampler": "euler",
+      "steps": 37,
+      "cfg_scale": 7.0,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "40ab91d9-1495-41ff-8792-e7c59955f3e6",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "ishtars-gate-nsfw-sfw",
+    "timestamp": "2025-11-18T23:41:49.011697",
+    "thumbnail_id": "ishtars-gate-nsfw-sfw-3884499817-1763505708",
+    "settings": {
+      "sampler": "dpmpp_2s",
+      "steps": 37,
+      "cfg_scale": 7.0,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "3fc7a62b-f9a7-47a5-9854-c7302d9ead3b",
+    "prompt": "portrait of a person with wet eyes, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "ishtars-gate-nsfw-sfw",
+    "timestamp": "2025-11-18T23:47:37.545253",
+    "thumbnail_id": "ishtars-gate-nsfw-sfw-3884499817-1763506057",
+    "settings": {
+      "sampler": "dpmpp_2s",
+      "steps": 37,
+      "cfg_scale": 1.0,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "26cd0bbd-4c9a-447b-9271-62a70e1afb15",
+    "prompt": "portrait of a person with wet red eyes, professional photography, high quality, high detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "ishtars-gate-nsfw-sfw",
+    "timestamp": "2025-11-18T23:50:22.739957",
+    "thumbnail_id": "ishtars-gate-nsfw-sfw-3884499817-1763506221",
+    "settings": {
+      "sampler": "dpmpp_2s",
+      "steps": 37,
+      "cfg_scale": 1.0,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "a714d783-e066-435e-83af-c5716307a321",
+    "prompt": "portrait of a person with blue crying eyes, professional photography, high quality, high detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "ishtars-gate-nsfw-sfw",
+    "timestamp": "2025-11-18T23:53:21.296507",
+    "thumbnail_id": "ishtars-gate-nsfw-sfw-3884499817-1763506400",
+    "settings": {
+      "sampler": "dpmpp_2s",
+      "steps": 37,
+      "cfg_scale": 14.0,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "d1f2dffb-3b92-4621-b50f-c95ba59f1c52",
+    "prompt": "portrait of a person with blue crying eyes, professional photography, high quality, high detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "ishtars-gate-nsfw-sfw",
+    "timestamp": "2025-11-18T23:54:38.072067",
+    "thumbnail_id": "ishtars-gate-nsfw-sfw-3884499817-1763506477",
+    "settings": {
+      "sampler": "dpmpp_2s",
+      "steps": 60,
+      "cfg_scale": 1.0,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "a48a81f0-f263-4a82-b9a4-afd9857fb6be",
+    "prompt": "portrait of a person with blue crying eyes, professional photography, high quality, high detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "ponydiffusion-v6-xl",
+    "timestamp": "2025-11-18T23:58:33.794212",
+    "thumbnail_id": "ponydiffusion-v6-xl-3884499817-1763506713",
+    "settings": {
+      "sampler": "dpmpp_2s",
+      "steps": 37,
+      "cfg_scale": 7.0,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "1bb7883e-5bae-4e87-8a93-e74af923a5bb",
+    "prompt": "portrait of a persone, professional photography, high quality, high detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "duchaiten-pony-xl",
+    "timestamp": "2025-11-19T00:15:44.874951",
+    "thumbnail_id": "duchaiten-pony-xl-3884499817-1763507744",
+    "settings": {
+      "sampler": "dpmpp_2s",
+      "steps": 37,
+      "cfg_scale": 7.0,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": []
+    }
+  },
+  {
+    "id": "99ab2cb2-b949-48d1-81b4-9918d5a05f42",
+    "prompt": "portrait of a young girl personne 20 years old, professional photography, high quality, high detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "model": "ponydiffusion-v6-xl",
+    "timestamp": "2025-11-19T00:26:17.840316",
+    "thumbnail_id": "ponydiffusion-v6-xl-3884499817-1763508377",
+    "settings": {
+      "sampler": "dpmpp_2s",
+      "steps": 37,
+      "cfg_scale": 7.0,
+      "clip_skip": 2,
+      "resolution": "768x768",
+      "seed": 3884499817,
+      "use_aspect_ratio": false,
+      "aspect_ratio": "768x768",
+      "custom_width": 768,
+      "custom_height": 768,
+      "loras": [
+        {
+          "key": "g0th1c-pxl",
+          "weight": 0.5
+        },
+        {
+          "key": "expressive-h",
+          "weight": 0.45
+        },
+        {
+          "key": "incase-ponyxl",
+          "weight": 0.5
+        },
+        {
+          "key": "bs-pony-alpha",
+          "weight": 0.6
+        },
+        {
+          "key": "ps-alpha",
+          "weight": 0.55
+        },
+        {
+          "key": "pts-alpha",
+          "weight": 0.55
+        }
+      ]
+    }
+  }
+]

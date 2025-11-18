@@ -112,7 +112,7 @@ class GenerateResponse(BaseModel):
 
 class LoRAInput(BaseModel):
     key: str = Field(..., description="Identifiant interne (LORA_LIBRARY)")
-    weight: float = Field(default=0.5, ge=0.0, le=2.0)
+    weight: float = Field(default=0.5, ge=-3.0, le=3.0)
 
 
 class AppliedLoRA(BaseModel):
@@ -176,22 +176,77 @@ SAMPLERS = {
 }
 
 
+# Cache des pipelines avec gestion de mémoire limitée
+# Avec 8GB VRAM, on ne peut garder qu'un seul modèle SDXL en mémoire
 PIPELINE_CACHE: Dict[ModelKey, StableDiffusionPipeline | StableDiffusionXLPipeline] = {}
+PIPELINE_CACHE_ORDER: list[ModelKey] = []  # Ordre d'utilisation (LRU)
+MAX_CACHED_MODELS = 1  # Maximum 1 modèle en cache avec 8GB VRAM
 VIDEO_PIPELINE: StableVideoDiffusionPipeline | None = None
 
 ENABLED_MODELS = {
     key.strip()
     for key in os.getenv(
         "ENABLED_MODELS",
-        "sdxl,cyberrealistic-pony,tsunade-il,wai-illustrious-sdxl,wan22-enhanced-nsfw-camera,hassaku-xl-illustrious-v32,duchaiten-pony-xl,lucentxl-pony,ponydiffusion-v6-xl,ishtars-gate-nsfw-sfw",
+        "sdxl,sdxl-turbo,dreamshaper-xl,realistic-vision,dreamshaper,cyberrealistic-pony,tsunade-il,wai-illustrious-sdxl,wan22-enhanced-nsfw-camera,hassaku-xl-illustrious-v32,duchaiten-pony-xl,lucentxl-pony,ponydiffusion-v6-xl,ishtars-gate-nsfw-sfw",
     ).split(",")
     if key.strip()
 }
 
 
-def load_pipeline(model_key: ModelKey):
+def _clear_gpu_memory():
+    """Nettoie la mémoire GPU en libérant les caches."""
+    if DEVICE == "cuda":
+        try:
+            # Libère le cache PyTorch
+            torch.cuda.empty_cache()
+            # Synchronise pour s'assurer que toutes les opérations sont terminées
+            torch.cuda.synchronize()
+            # Force la collecte de garbage Python
+            import gc
+            gc.collect()
+            # Libère à nouveau après garbage collection
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+
+def _unload_pipeline(model_key: ModelKey):
+    """Décharge un pipeline de la mémoire GPU."""
     if model_key in PIPELINE_CACHE:
+        pipe = PIPELINE_CACHE[model_key]
+        try:
+            # Déplace le pipeline sur CPU pour libérer la VRAM
+            if hasattr(pipe, "to"):
+                pipe = pipe.to("cpu")
+            # Supprime les références
+            del pipe
+            del PIPELINE_CACHE[model_key]
+            if model_key in PIPELINE_CACHE_ORDER:
+                PIPELINE_CACHE_ORDER.remove(model_key)
+            print(f"[INFO] Modèle '{model_key}' déchargé de la mémoire GPU")
+        except Exception as e:
+            print(f"[WARN] Erreur lors du déchargement de '{model_key}': {e}")
+        finally:
+            _clear_gpu_memory()
+
+
+def load_pipeline(model_key: ModelKey):
+    """Charge un pipeline avec gestion intelligente de la mémoire GPU."""
+    # Si le modèle est déjà en cache, le mettre en premier (LRU)
+    if model_key in PIPELINE_CACHE:
+        if model_key in PIPELINE_CACHE_ORDER:
+            PIPELINE_CACHE_ORDER.remove(model_key)
+        PIPELINE_CACHE_ORDER.append(model_key)
         return PIPELINE_CACHE[model_key]
+
+    # Si le cache est plein, décharger le modèle le moins récemment utilisé
+    while len(PIPELINE_CACHE) >= MAX_CACHED_MODELS and PIPELINE_CACHE_ORDER:
+        oldest_key = PIPELINE_CACHE_ORDER.pop(0)
+        if oldest_key != model_key:  # Ne pas décharger celui qu'on charge
+            _unload_pipeline(oldest_key)
+
+    # Nettoyer la mémoire GPU avant de charger un nouveau modèle
+    _clear_gpu_memory()
 
     config = MODEL_CONFIG[model_key]
     model_path = ensure_model_file(model_key)
@@ -226,27 +281,85 @@ def load_pipeline(model_key: ModelKey):
         if lora_path.exists():
             try:
                 adapter_name = f"default-{model_key}"
+                lora_label = config.get("lora_label", adapter_name)
+                print(f"[INFO] Chargement du LoRA '{lora_label}' depuis {lora_path.name}...")
                 with torch.enable_grad():
                     pipe.load_lora_weights(lora_path, adapter_name=adapter_name)
                 pipe.set_adapters([adapter_name])
                 pipe._loaded_loras.add(adapter_name)  # type: ignore[attr-defined]
                 pipe._default_lora_adapter = adapter_name  # type: ignore[attr-defined]
-                pipe._default_lora_label = config.get("lora_label") or adapter_name  # type: ignore[attr-defined]
+                pipe._default_lora_label = lora_label  # type: ignore[attr-defined]
                 pipe._default_lora_weight = float(config.get("lora_weight", 1.0))  # type: ignore[attr-defined]
+                print(f"[INFO] ✅ LoRA '{lora_label}' chargé avec succès")
+            except ValueError as err:
+                error_msg = str(err)
+                if "Invalid LoRA checkpoint" in error_msg or "not a valid LoRA" in error_msg:
+                    print(f"[WARN] ⚠️  Le fichier '{lora_path.name}' n'est pas un LoRA valide.")
+                    print(f"       Il peut s'agir d'un modèle complet ou d'un format incompatible.")
+                    print(f"       Le modèle '{model_key}' sera chargé sans ce LoRA.")
+                    print(f"       Erreur: {error_msg}")
+                else:
+                    print(f"[WARN] ⚠️  Impossible de charger le LoRA '{lora_path.name}': {error_msg}")
             except Exception as err:  # pylint: disable=broad-except
-                print(f"[WARN] Impossible de charger le LoRA '{lora_path}': {err}")
+                print(f"[WARN] ⚠️  Erreur lors du chargement du LoRA '{lora_path.name}': {type(err).__name__}: {err}")
+                print(f"       Le modèle '{model_key}' sera chargé sans ce LoRA.")
         else:
-            print(f"[WARN] LoRA '{lora_path}' introuvable pour {model_key}.")
+            print(f"[WARN] ⚠️  LoRA '{lora_path}' introuvable pour {model_key}.")
+            print(f"       Le modèle sera chargé sans ce LoRA.")
     else:
         if hasattr(pipe, "disable_lora"):
             pipe.disable_lora()
 
+    # Optimisation GPU : utilise to("cuda") si assez de VRAM, sinon CPU offload
     if DEVICE == "cuda":
-        pipe.enable_model_cpu_offload()
+        # Vérifie la VRAM disponible (approximatif)
+        try:
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            # Si 8GB ou plus VRAM, charge tout en GPU (plus rapide)
+            # Avec 8GB exactement, on peut charger SDXL en GPU
+            # Avec 8GB VRAM, on peut charger en GPU mais avec optimisations agressives
+            # ou utiliser CPU offload pour plus de stabilité
+            use_cpu_offload = os.getenv("USE_CPU_OFFLOAD", "false").lower() == "true"
+            
+            if use_cpu_offload or vram_gb < 7.5:
+                # CPU offload : plus lent mais plus stable, évite les erreurs cuDNN
+                pipe.enable_model_cpu_offload()
+                print(f"[INFO] CPU offload activé ({vram_gb:.1f}GB VRAM disponible)")
+            else:
+                # GPU direct : plus rapide mais nécessite plus de gestion mémoire
+                pipe = pipe.to("cuda")
+                
+                # Optimisations mémoire pour réduire la consommation VRAM
+                if hasattr(pipe, "enable_vae_slicing"):
+                    pipe.enable_vae_slicing()  # Découpe le VAE pour économiser la mémoire
+                # NOTE: VAE tiling désactivé car peut causer des erreurs cuDNN
+                # if hasattr(pipe, "enable_vae_tiling"):
+                #     pipe.enable_vae_tiling()  # Peut causer CUDNN_STATUS_INTERNAL_ERROR
+                if hasattr(pipe, "enable_attention_slicing"):
+                    pipe.enable_attention_slicing(1)  # Découpe l'attention
+                
+                # Désactiver le cache cuDNN pour éviter les problèmes de fragmentation
+                torch.backends.cudnn.benchmark = False
+                torch.backends.cudnn.deterministic = False
+                
+                print(f"[INFO] ✅ Modèle chargé en GPU ({vram_gb:.1f}GB VRAM disponible)")
+                print(f"[INFO] Optimisations mémoire activées (VAE slicing, attention slicing)")
+        except Exception as e:
+            # Fallback sur CPU offload si erreur
+            print(f"[WARN] Erreur lors de la vérification VRAM: {e}")
+            pipe.enable_model_cpu_offload()
+            print(f"[INFO] CPU offload activé (fallback)")
     else:
         pipe = pipe.to("cpu")
+        print(f"[INFO] Modèle chargé en CPU (pas de GPU détecté)")
 
+    # Ajouter au cache
     PIPELINE_CACHE[model_key] = pipe
+    PIPELINE_CACHE_ORDER.append(model_key)
+    
+    # Nettoyer la mémoire après chargement
+    _clear_gpu_memory()
+    
     return pipe
 
 
@@ -280,12 +393,27 @@ def pil_to_base64(image) -> str:
 
 
 def _ensure_adapter_loaded(pipe, adapter_name: str, lora_path: Path):
+    """Charge un LoRA s'il n'est pas déjà chargé."""
     loaded = getattr(pipe, "_loaded_loras", set())
     if adapter_name not in loaded:
-        with torch.enable_grad():
-            pipe.load_lora_weights(lora_path, adapter_name=adapter_name)
-        loaded.add(adapter_name)
-        pipe._loaded_loras = loaded  # type: ignore[attr-defined]
+        try:
+            with torch.enable_grad():
+                pipe.load_lora_weights(lora_path, adapter_name=adapter_name)
+            loaded.add(adapter_name)
+            pipe._loaded_loras = loaded  # type: ignore[attr-defined]
+        except ValueError as err:
+            error_msg = str(err)
+            if "Invalid LoRA checkpoint" in error_msg or "not a valid LoRA" in error_msg:
+                raise ValueError(
+                    f"Le fichier '{lora_path.name}' n'est pas un LoRA valide. "
+                    f"Il peut s'agir d'un modèle complet ou d'un format incompatible. "
+                    f"Erreur: {error_msg}"
+                ) from err
+            raise
+        except Exception as err:
+            raise RuntimeError(
+                f"Erreur lors du chargement du LoRA '{lora_path.name}': {type(err).__name__}: {err}"
+            ) from err
 
 
 def _reset_pipeline_adapters(pipe):
@@ -369,23 +497,36 @@ def _apply_request_loras(
     for lora_input in payload.additional_loras:
         config = LORA_LIBRARY.get(lora_input.key)
         if not config:
+            print(f"[WARN] LoRA '{lora_input.key}' non trouvé dans la bibliothèque")
             continue
         try:
             lora_path = ensure_lora_file(lora_input.key)
         except FileNotFoundError as err:
-            raise HTTPException(status_code=400, detail=str(err)) from err
+            print(f"[WARN] ⚠️  Fichier LoRA introuvable pour '{lora_input.key}': {err}")
+            continue
         adapter_name = f"user-{lora_input.key}"
-        _ensure_adapter_loaded(pipe, adapter_name, lora_path)
-        adapters.append(adapter_name)
-        weights.append(lora_input.weight)
-        applied.append(
-            AppliedLoRA(
-                key=lora_input.key,
-                label=config["label"],
-                weight=lora_input.weight,
-                type=config.get("type", "LoRA"),
+        try:
+            _ensure_adapter_loaded(pipe, adapter_name, lora_path)
+            adapters.append(adapter_name)
+            weights.append(lora_input.weight)
+            applied.append(
+                AppliedLoRA(
+                    key=lora_input.key,
+                    label=config["label"],
+                    weight=lora_input.weight,
+                    type=config.get("type", "LoRA"),
+                )
             )
-        )
+        except (ValueError, RuntimeError) as err:
+            error_msg = str(err)
+            if "Invalid LoRA checkpoint" in error_msg or "not a valid LoRA" in error_msg:
+                print(f"[WARN] ⚠️  Le fichier LoRA '{lora_input.key}' n'est pas un LoRA valide.")
+                print(f"       Il peut s'agir d'un modèle complet ou d'un format incompatible.")
+                print(f"       Ce LoRA sera ignoré pour cette génération.")
+            else:
+                print(f"[WARN] ⚠️  Impossible de charger le LoRA '{lora_input.key}': {error_msg}")
+                print(f"       Ce LoRA sera ignoré pour cette génération.")
+            continue
 
     if adapters:
         pipe.set_adapters(adapters, adapter_weights=weights)
@@ -409,7 +550,43 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "device": DEVICE}
+    """Endpoint de santé avec informations sur le device."""
+    try:
+        # Informations détaillées sur le device
+        device_info = {"device": DEVICE, "status": "ok"}
+        if DEVICE == "cuda" and torch.cuda.is_available():
+            try:
+                device_info["gpu_name"] = torch.cuda.get_device_name(0)
+                props = torch.cuda.get_device_properties(0)
+                device_info["vram_total_gb"] = round(props.total_memory / (1024**3), 2)
+                device_info["vram_allocated_gb"] = round(torch.cuda.memory_allocated(0) / (1024**3), 2)
+                device_info["vram_reserved_gb"] = round(torch.cuda.memory_reserved(0) / (1024**3), 2)
+                device_info["vram_free_gb"] = round(device_info["vram_total_gb"] - device_info["vram_reserved_gb"], 2)
+                device_info["cached_models"] = list(PIPELINE_CACHE.keys())
+                device_info["cache_size"] = len(PIPELINE_CACHE)
+            except Exception as e:
+                device_info["gpu_error"] = str(e)
+        return device_info
+    except Exception as e:
+        return {"status": "error", "device": DEVICE, "error": str(e)}
+
+
+@app.post("/clear-cache")
+def clear_cache():
+    """Force le nettoyage du cache des modèles et de la mémoire GPU."""
+    try:
+        cleared = []
+        for model_key in list(PIPELINE_CACHE.keys()):
+            _unload_pipeline(model_key)
+            cleared.append(model_key)
+        _clear_gpu_memory()
+        return {
+            "status": "ok",
+            "cleared_models": cleared,
+            "message": f"{len(cleared)} modèle(s) déchargé(s) de la mémoire GPU",
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 
 @app.get("/models")
@@ -545,21 +722,78 @@ def generate(payload: GenerateRequest):
 
     applied_loras_meta: list[AppliedLoRA] = []
     start = time.perf_counter()
+    
+    # Optimiser le VAE pour réduire la consommation mémoire
+    if DEVICE == "cuda" and hasattr(pipe, "enable_vae_slicing"):
+        try:
+            pipe.enable_vae_slicing()
+        except Exception:
+            pass
+    
     try:
         applied_loras_meta = _apply_request_loras(pipe, payload)
+        
+        # Nettoyer la mémoire avant la génération
+        _clear_gpu_memory()
+        
         with torch.inference_mode():
-            result = pipe(
-                prompt=payload.prompt,
-                negative_prompt=payload.negative_prompt or "",
-                guidance_scale=payload.cfg_scale,
-                num_inference_steps=payload.steps,
-                width=width,
-                height=height,
-                generator=generator,
-                num_images_per_prompt=payload.image_count,
-            )
+            try:
+                result = pipe(
+                    prompt=payload.prompt,
+                    negative_prompt=payload.negative_prompt or "",
+                    guidance_scale=payload.cfg_scale,
+                    num_inference_steps=payload.steps,
+                    width=width,
+                    height=height,
+                    generator=generator,
+                    num_images_per_prompt=payload.image_count,
+                )
+            except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+                error_str = str(e).lower()
+                is_memory_error = (
+                    "out of memory" in error_str
+                    or "cuda" in error_str
+                    or "cudnn" in error_str
+                    or "allocation" in error_str
+                )
+                
+                if is_memory_error:
+                    # En cas d'erreur mémoire, nettoyer agressivement
+                    _clear_gpu_memory()
+                    print(f"[WARN] ⚠️  Erreur mémoire GPU détectée, nettoyage agressif...")
+                    # Décharger tous les modèles en cache
+                    for cached_key in list(PIPELINE_CACHE.keys()):
+                        if cached_key != payload.model:
+                            _unload_pipeline(cached_key)
+                    _clear_gpu_memory()
+                    
+                    # Suggestions selon le type d'erreur
+                    suggestions = []
+                    if payload.image_count > 1:
+                        suggestions.append(f"réduire le nombre d'images ({payload.image_count} → 1)")
+                    if width * height > 1024 * 1024:
+                        suggestions.append(f"réduire la résolution ({width}x{height} → 1024x1024)")
+                    if payload.steps > 30:
+                        suggestions.append(f"réduire les steps ({payload.steps} → 30)")
+                    
+                    suggestion_text = ". ".join(suggestions) if suggestions else "réduire la résolution ou le nombre d'images"
+                    
+                    raise HTTPException(
+                        status_code=507,
+                        detail=(
+                            f"Mémoire GPU insuffisante (erreur cuDNN/PyTorch). "
+                            f"Suggestions: {suggestion_text}. "
+                            f"Erreur: {str(e)}"
+                        ),
+                    ) from e
+                else:
+                    # Autre erreur RuntimeError, la propager
+                    raise
     finally:
         _reset_pipeline_adapters(pipe)
+        # Nettoyer la mémoire après la génération
+        _clear_gpu_memory()
+    
     duration = time.perf_counter() - start
 
     images = []

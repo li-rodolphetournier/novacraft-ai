@@ -172,8 +172,8 @@ export function ModelSettingsPanel({
                     <div className="mt-2 space-y-1.5">
                       <input
                         type="range"
-                        min={0}
-                        max={1.5}
+                        min={-3}
+                        max={3}
                         step={0.05}
                         value={active.weight}
                         onChange={(event) => onLoraWeightChange(option.key, Number(event.target.value))}
