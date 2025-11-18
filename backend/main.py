@@ -10,6 +10,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Literal, Tuple
+import uuid
 
 import imageio
 import numpy as np
@@ -53,10 +54,17 @@ STORAGE_IMAGES_DIR = STORAGE_DIR / "images"
 STORAGE_VIDEOS_DIR = STORAGE_DIR / "videos"
 STORAGE_IMAGES_JSON = STORAGE_DIR / "gallery-images.json"
 STORAGE_VIDEOS_JSON = STORAGE_DIR / "gallery-videos.json"
+STORAGE_HISTORY_JSON = STORAGE_DIR / "history.json"
+MAX_HISTORY_ENTRIES = 500
 
 # Créer les dossiers s'ils n'existent pas
 STORAGE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 STORAGE_VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+STORAGE_HISTORY_JSON.parent.mkdir(parents=True, exist_ok=True)
+
+for json_path in (STORAGE_IMAGES_JSON, STORAGE_VIDEOS_JSON, STORAGE_HISTORY_JSON):
+    if not json_path.exists():
+        json_path.write_text("[]", encoding="utf-8")
 
 
 class GenerateRequest(BaseModel):
@@ -308,6 +316,14 @@ def _save_storage_json(json_path: Path, data: list[Dict[str, Any]]) -> None:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except IOError as err:
         print(f"[WARN] Impossible de sauvegarder {json_path}: {err}")
+
+
+def _append_history_entry(entry: Dict[str, Any]) -> None:
+    """Ajoute une entrée d'historique persistée sur disque."""
+    entries = _load_storage_json(STORAGE_HISTORY_JSON)
+    entries.append(entry)
+    entries = entries[-MAX_HISTORY_ENTRIES:]
+    _save_storage_json(STORAGE_HISTORY_JSON, entries)
 
 
 def _save_image_file(image_id: str, base64_data: str) -> Path:
@@ -598,6 +614,32 @@ def generate(payload: GenerateRequest):
             )
         )
 
+    if images:
+        history_entry = {
+            "id": str(uuid.uuid4()),
+            "prompt": payload.prompt,
+            "negative_prompt": payload.negative_prompt or "",
+            "model": payload.model,
+            "timestamp": datetime.now().isoformat(),
+            "thumbnail_id": images[0].id,
+            "settings": {
+                "sampler": payload.sampler,
+                "steps": payload.steps,
+                "cfg_scale": payload.cfg_scale,
+                "resolution": f"{width}x{height}",
+                "seed": seed,
+                "use_aspect_ratio": bool(payload.width and payload.height),
+                "aspect_ratio": payload.resolution if not (payload.width and payload.height) else None,
+                "custom_width": width,
+                "custom_height": height,
+                "loras": [
+                    {"key": lora.key, "weight": lora.weight}
+                    for lora in payload.additional_loras
+                ],
+            },
+        }
+        _append_history_entry(history_entry)
+
     return GenerateResponse(
         images=images,
         model=payload.model,
@@ -751,6 +793,33 @@ def get_stored_videos():
         else:
             item["mp4_base64"] = None
     return {"videos": stored}
+
+
+@app.get("/storage/history")
+def get_stored_history():
+    """Récupère les entrées d'historique persistées."""
+    stored = _load_storage_json(STORAGE_HISTORY_JSON)
+    for item in stored:
+        thumb_id = item.get("thumbnail_id")
+        if thumb_id:
+            file_path = STORAGE_IMAGES_DIR / f"{thumb_id}.png"
+            if file_path.exists():
+                with open(file_path, "rb") as f:
+                    item["thumbnail_base64"] = base64.b64encode(f.read()).decode("utf-8")
+            else:
+                item["thumbnail_base64"] = None
+        else:
+            item["thumbnail_base64"] = None
+    return {"history": stored}
+
+
+@app.delete("/storage/history/{entry_id}")
+def delete_history_entry(entry_id: str):
+    """Supprime une entrée d'historique."""
+    stored = _load_storage_json(STORAGE_HISTORY_JSON)
+    updated = [entry for entry in stored if entry.get("id") != entry_id]
+    _save_storage_json(STORAGE_HISTORY_JSON, updated)
+    return {"success": True}
 
 
 @app.delete("/storage/image/{image_id}")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { aspectRatios, promptPresets, resolutions, samplers } from "@/config/generator";
 import {
@@ -65,19 +65,6 @@ export default function Home() {
   const [availableLoras, setAvailableLoras] = useState<LoraOption[]>([]);
   const [selectedLoras, setSelectedLoras] = useState<SelectedLora[]>([]);
   const [showNSFW, setShowNSFW] = useState(false);
-
-  // Charger l'historique depuis localStorage au montage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as HistoryEntry[];
-        setHistory(parsed.slice(0, MAX_HISTORY_ENTRIES));
-      }
-    } catch {
-      // Ignorer les erreurs de parsing
-    }
-  }, []);
 
   // Charger les images depuis le backend au montage
   useEffect(() => {
@@ -193,6 +180,56 @@ export default function Home() {
     }
   };
 
+  const fetchHistory = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/storage/history`);
+      if (response.ok) {
+        const data = await response.json();
+        const backendHistory: HistoryEntry[] = (data.history || []).map((entry: any) => ({
+          id: entry.id,
+          prompt: entry.prompt,
+          negativePrompt: entry.negative_prompt || "",
+          model: entry.model,
+          thumbnail: entry.thumbnail_base64
+            ? `data:image/png;base64,${entry.thumbnail_base64}`
+            : undefined,
+          timestamp: entry.timestamp ?? Date.now(),
+          settings: entry.settings
+            ? {
+                sampler: entry.settings.sampler,
+                steps: entry.settings.steps,
+                cfgScale: entry.settings.cfg_scale,
+                resolution: entry.settings.resolution,
+                seed: entry.settings.seed,
+                useAspectRatio: entry.settings.use_aspect_ratio,
+                aspectRatio: entry.settings.aspect_ratio,
+                customWidth: entry.settings.custom_width,
+                customHeight: entry.settings.custom_height,
+                loras: entry.settings.loras,
+              }
+            : undefined,
+        }));
+        setHistory(backendHistory);
+        saveHistory(backendHistory);
+        return true;
+      }
+    } catch (err) {
+      console.warn("Impossible de charger l'historique depuis le backend", err);
+    }
+
+    try {
+      const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as HistoryEntry[];
+        setHistory(parsed.slice(0, MAX_HISTORY_ENTRIES));
+      }
+    } catch {
+      // Ignorer les erreurs de parsing
+    }
+
+    return false;
+  }, [apiBase]);
+
   // Sauvegarder les images dans localStorage
   const saveImages = (newImages: GeneratedImage[]) => {
     try {
@@ -201,6 +238,10 @@ export default function Home() {
       // Ignorer les erreurs de stockage
     }
   };
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
 
   const cfgHint = useMemo(() => {
     if (cfgScale <= 7) return "5–7 → réaliste";
@@ -401,31 +442,7 @@ export default function Home() {
           setLastDuration(typedPayload.duration_seconds);
         }
 
-        const thumb = generated[0]?.base64;
-        const newEntry: HistoryEntry = {
-          id: crypto.randomUUID(),
-          prompt,
-          negativePrompt,
-          model,
-          thumbnail: thumb ? `data:image/png;base64,${thumb}` : undefined,
-          timestamp: Date.now(),
-          settings: {
-            sampler,
-            steps,
-            cfgScale,
-            resolution,
-            seed: Number(seed) || -1,
-            useAspectRatio,
-            aspectRatio,
-            customWidth,
-            customHeight,
-            loras: selectedLoras,
-          },
-        };
-
-        const updatedHistory = [newEntry, ...history];
-        setHistory(updatedHistory);
-        saveHistory(updatedHistory);
+        await fetchHistory();
       } else {
         const response = await fetch(`${apiBase}/generate-video`, {
           method: "POST",
@@ -545,10 +562,17 @@ export default function Home() {
     }
   };
 
-  const handleDeleteHistory = (id: string) => {
-    const updated = history.filter((entry) => entry.id !== id);
-    setHistory(updated);
-    saveHistory(updated);
+  const handleDeleteHistory = async (id: string) => {
+    try {
+      await fetch(`${apiBase}/storage/history/${id}`, { method: "DELETE" });
+    } catch (err) {
+      console.warn("Impossible de supprimer l'entrée d'historique côté backend", err);
+    }
+    setHistory((prev) => {
+      const updated = prev.filter((entry) => entry.id !== id);
+      saveHistory(updated);
+      return updated;
+    });
   };
 
   const handleExportImage = (image: GeneratedImage) => {

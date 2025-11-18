@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "id": "sdxl-3884499817-1763459827",
+    "seed": 3884499817,
+    "model": "sdxl",
+    "sampler": "euler",
+    "steps": 28,
+    "cfg_scale": 6.5,
+    "resolution": "1024x1024",
+    "prompt": "portrait of a person, professional photography, high quality, detailed face, natural lighting",
+    "negative_prompt": "blurry, bad anatomy, low quality, distorted hands, watermark, cartoon, anime",
+    "clip_skip": 2,
+    "loras": [],
+    "timestamp": "2025-11-18T10:57:08.201187",
+    "file_path": "images/sdxl-3884499817-1763459827.png"
+  }
+]

@@ -41,7 +41,7 @@ export type HistoryEntry = {
   prompt: string;
   negativePrompt: string;
   model: ModelKey;
-  timestamp: number;
+  timestamp: number | string;
   thumbnail?: string;
   settings?: {
     sampler: Sampler;
