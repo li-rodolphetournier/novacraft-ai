@@ -111,3 +111,25 @@ export type PromptPreset = {
   id?: string;
 };
 
+export type JobType = "image" | "video";
+export type JobStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
+
+export type JobProgress = {
+  current: number;
+  total: number;
+  message?: string;
+};
+
+export type Job = {
+  id: string;
+  type: JobType;
+  status: JobStatus;
+  payload?: Record<string, any>;
+  metadata?: Record<string, any>;
+  progress?: JobProgress;
+  result?: Record<string, any>;
+  error?: string | null;
+  created_at?: number;
+  updated_at?: number;
+};
+

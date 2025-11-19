@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { aspectRatios, promptPresets, resolutions, samplers } from "@/config/generator";
 import {
   GeneratedImage,
   GeneratedVideo,
-  GenerateResponse,
   HistoryEntry,
+  Job,
   LoraOption,
   ModelKey,
   Mode,
@@ -21,6 +21,7 @@ import { GeneratorHeader } from "@/components/generator/GeneratorHeader";
 import { PromptSettingsPanel } from "@/components/generator/PromptSettingsPanel";
 import { ModelSettingsPanel } from "@/components/generator/ModelSettingsPanel";
 import { GallerySection } from "@/components/generator/GallerySection";
+import { JobQueuePanel } from "@/components/generator/JobQueuePanel";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -51,8 +52,6 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [generationProgress, setGenerationProgress] = useState<number | null>(null);
-  const [lastDuration, setLastDuration] = useState<number | null>(null);
   const [availableModels, setAvailableModels] = useState<Set<string>>(new Set(["sdxl"]));
   const [mode, setMode] = useState<Mode>("image");
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
@@ -68,6 +67,11 @@ export default function Home() {
   const [showNSFW, setShowNSFW] = useState(false);
   const [customPresets, setCustomPresets] = useState<PromptPreset[]>([]);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+
+  const processedJobIdsRef = useRef<Set<string>>(new Set());
 
   // Charger les images depuis le backend au montage
   useEffect(() => {
@@ -244,17 +248,119 @@ export default function Home() {
   }, [apiBase]);
 
   // Sauvegarder les images dans localStorage
-  const saveImages = (newImages: GeneratedImage[]) => {
+  const saveImages = useCallback((newImages: GeneratedImage[]) => {
     try {
       localStorage.setItem(GALLERY_STORAGE_KEY, JSON.stringify(newImages.slice(0, MAX_GALLERY_IMAGES)));
     } catch {
       // Ignorer les erreurs de stockage
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchHistory();
   }, [fetchHistory]);
+
+  const refreshJobs = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/jobs`);
+      if (!response.ok) {
+        throw new Error("Impossible de charger la file de jobs.");
+      }
+      const data = await response.json();
+      setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+      setJobsError(null);
+    } catch (err) {
+      setJobsError(err instanceof Error ? err.message : "Erreur inconnue (jobs).");
+    }
+  }, [apiBase]);
+
+  useEffect(() => {
+    refreshJobs();
+    const interval = window.setInterval(refreshJobs, 4000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [refreshJobs]);
+
+  useEffect(() => {
+    jobs.forEach((job) => {
+      if (job.status === "completed" && job.result && !processedJobIdsRef.current.has(job.id)) {
+        if (job.type === "image") {
+          const generatedImages: GeneratedImage[] = (job.result.images || []).map((img: any) => ({
+            id: img.id,
+            seed: img.seed,
+            base64: img.base64 || "",
+            model: img.model,
+            sampler: img.sampler,
+            steps: img.steps,
+            cfg_scale: img.cfg_scale ?? img.cfgScale,
+            resolution: img.resolution,
+            prompt: img.prompt,
+            negative_prompt: img.negative_prompt ?? img.negativePrompt,
+            clip_skip: img.clip_skip ?? img.clipSkip,
+            loras: img.loras || [],
+          }));
+          if (generatedImages.length > 0) {
+            setImages((prev) => {
+              const updated = [...generatedImages, ...prev];
+              saveImages(updated);
+              return updated;
+            });
+          }
+          fetchHistory();
+        } else if (job.type === "video") {
+          const videoPayload = job.result.video || {};
+          const newVideo: GeneratedVideo = {
+            id: videoPayload.id || job.id,
+            mp4Base64: videoPayload.mp4_base64 || videoPayload.mp4Base64 || "",
+            durationSeconds: job.result.duration_seconds ?? job.result.durationSeconds,
+          };
+          if (newVideo.mp4Base64) {
+            setVideos((prev) => [newVideo, ...prev]);
+          }
+        }
+        processedJobIdsRef.current.add(job.id);
+      }
+    });
+  }, [jobs, fetchHistory, saveImages]);
+
+  const sendJobCommand = useCallback(
+    async (jobId: string, action: "pause" | "resume" | "start" | "cancel") => {
+      try {
+        const response = await fetch(`${apiBase}/jobs/${jobId}/${action}`, {
+          method: "POST",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.detail ?? "Action impossible sur ce job.");
+        }
+        await refreshJobs();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Commande job impossible.");
+      }
+    },
+    [apiBase, refreshJobs],
+  );
+
+  const handlePauseJob = useCallback((jobId: string) => sendJobCommand(jobId, "pause"), [sendJobCommand]);
+  const handleResumeJob = useCallback((jobId: string) => sendJobCommand(jobId, "resume"), [sendJobCommand]);
+  const handleStartJob = useCallback((jobId: string) => sendJobCommand(jobId, "start"), [sendJobCommand]);
+  const handleCancelJob = useCallback((jobId: string) => sendJobCommand(jobId, "cancel"), [sendJobCommand]);
+  const handleDeleteJob = useCallback(
+    async (jobId: string) => {
+      try {
+        const response = await fetch(`${apiBase}/jobs/${jobId}`, { method: "DELETE" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.detail ?? "Impossible de supprimer ce job.");
+        }
+        await refreshJobs();
+      } catch (err) {
+        setJobsError(err instanceof Error ? err.message : "Suppression de job impossible.");
+      }
+    },
+    [apiBase, refreshJobs],
+  );
 
   const cfgHint = useMemo(() => {
     if (cfgScale <= 7) return "5–7 → réaliste";
@@ -319,6 +425,52 @@ export default function Home() {
     );
   }, [customPresets]);
 
+  const orderedJobs = useMemo(() => {
+    const orderMap: Record<string, number> = {
+      running: 0,
+      pending: 1,
+      paused: 2,
+      failed: 3,
+      completed: 4,
+      cancelled: 5,
+    };
+    return [...jobs].sort((a, b) => {
+      const orderDiff = (orderMap[a.status] ?? 9) - (orderMap[b.status] ?? 9);
+      if (orderDiff !== 0) {
+        return orderDiff;
+      }
+      return (b.created_at ?? 0) - (a.created_at ?? 0);
+    });
+  }, [jobs]);
+
+  const hasRunningJob = useMemo(() => jobs.some((job) => job.status === "running"), [jobs]);
+  const runningJob = useMemo(() => jobs.find((job) => job.status === "running") ?? null, [jobs]);
+  const pendingJob = useMemo(() => jobs.find((job) => job.status === "pending") ?? null, [jobs]);
+  const displayJob = runningJob ?? pendingJob ?? null;
+  const jobStatusLabels: Record<string, string> = {
+    running: "Génération en cours…",
+    pending: "En attente dans la file…",
+    paused: "Job en pause",
+    failed: "Job en erreur",
+    cancelled: "Job annulé",
+    completed: "Job terminé",
+  };
+  const displayJobLabel = displayJob
+    ? displayJob.metadata?.prompt_preview ?? `Job ${displayJob.id}`
+    : null;
+  const displayJobProgressPercent =
+    displayJob?.progress && displayJob.progress.total
+      ? Math.min(
+          100,
+          Math.round((displayJob.progress.current / displayJob.progress.total) * 100),
+        )
+      : null;
+  const displayJobStatusText = displayJob
+    ? displayJob.progress?.message ?? jobStatusLabels[displayJob.status] ?? ""
+    : isGenerating
+      ? "Création du job…"
+      : null;
+
   const handleToggleLora = (key: string) => {
     setSelectedLoras((prev) => {
       const exists = prev.find((item) => item.key === key);
@@ -340,6 +492,10 @@ export default function Home() {
   const handleClearLoras = () => {
     setSelectedLoras([]);
   };
+
+  const handleSelectJob = useCallback((jobId: string) => {
+    setSelectedJobId(jobId);
+  }, []);
 
   const models = useMemo(() => {
     return [
@@ -458,100 +614,54 @@ export default function Home() {
     }
     setIsGenerating(true);
     setError(null);
-    setGenerationProgress(0);
-    setLastDuration(null);
-
-    // Progression estimée par step côté client (affichage uniquement)
-    const totalSteps = steps;
-    const stepIncrement = totalSteps > 0 ? 100 / totalSteps : 10;
-    const intervalId = window.setInterval(() => {
-      setGenerationProgress((prev) => {
-        const current = prev ?? 0;
-        // On évite d'aller à 100% avant la réponse réelle
-        const next = Math.min(current + stepIncrement, 95);
-        return next;
-      });
-    }, 400);
 
     try {
-      if (mode === "image") {
-        const response = await fetch(`${apiBase}/generate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            prompt,
-            negative_prompt: negativePrompt,
-            sampler,
-            steps,
-            cfg_scale: cfgScale,
-            resolution: useAspectRatio ? `${customWidth}x${customHeight}` : resolution,
-            seed: Number(seed) || -1,
-            clip_skip: clipSkip,
-            image_count: imageCount,
-            model,
-            ...(useAspectRatio && { width: customWidth, height: customHeight }),
-            additional_loras: selectedLoras,
-          }),
-        });
+      const endpoint = mode === "image" ? "generate" : "generate-video";
+      const payload =
+        mode === "image"
+          ? {
+              prompt,
+              negative_prompt: negativePrompt,
+              sampler,
+              steps,
+              cfg_scale: cfgScale,
+              resolution: useAspectRatio ? `${customWidth}x${customHeight}` : resolution,
+              seed: Number(seed) || -1,
+              clip_skip: clipSkip,
+              image_count: imageCount,
+              model,
+              ...(useAspectRatio && { width: customWidth, height: customHeight }),
+              additional_loras: selectedLoras,
+            }
+          : {
+              prompt,
+              negative_prompt: negativePrompt,
+              num_frames: numFrames,
+              fps,
+              resolution,
+              seed: Number(seed) || -1,
+              init_image_base64: initImageBase64,
+            };
 
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error((payload as { detail?: string }).detail ?? "Erreur inconnue côté backend.");
-        }
-        const typedPayload: GenerateResponse = payload;
+      const response = await fetch(`${apiBase}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-        setGenerationProgress(100);
-        const generated: GeneratedImage[] = typedPayload.images ?? [];
-        setImages((prev) => {
-          const updated = [...prev, ...generated];
-          saveImages(updated);
-          return updated;
-        });
-        if (typeof typedPayload.duration_seconds === "number") {
-          setLastDuration(typedPayload.duration_seconds);
-        }
-
-        await fetchHistory();
-      } else {
-        const response = await fetch(`${apiBase}/generate-video`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            prompt,
-            negative_prompt: negativePrompt,
-            num_frames: numFrames,
-            fps: fps,
-            resolution,
-            seed: Number(seed) || -1,
-            init_image_base64: initImageBase64,
-          }),
-        });
-
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.detail ?? "Erreur inconnue côté backend (vidéo).");
-        }
-
-        setGenerationProgress(100);
-        const newVideo: GeneratedVideo = {
-          id: payload.video?.id || crypto.randomUUID(),
-          mp4Base64: payload.video?.mp4_base64,
-          durationSeconds: payload.duration_seconds,
-        };
-        setVideos((prev) => [newVideo, ...prev]);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail ?? "Erreur inconnue côté backend.");
       }
+
+      if (typeof data.job_id === "string") {
+        setSelectedJobId(data.job_id);
+      }
+      await refreshJobs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible de générer.");
+      setError(err instanceof Error ? err.message : "Impossible de créer le job.");
     } finally {
-      if (intervalId !== undefined) {
-        window.clearInterval(intervalId);
-      }
       setIsGenerating(false);
-      setGenerationProgress(null);
     }
   };
 
@@ -953,9 +1063,10 @@ export default function Home() {
               clipSkip={clipSkip}
               selectedLoras={selectedLoras}
               availableLoras={filteredLoras}
-              isGenerating={isGenerating}
-              generationProgress={generationProgress}
-              lastDuration={lastDuration}
+              isSubmitting={isGenerating}
+              jobLabel={displayJobLabel}
+              jobStatusText={displayJobStatusText}
+              jobProgressPercent={displayJobProgressPercent}
               error={error}
               imageCount={imageCount}
               onModelChange={setModel}
@@ -968,6 +1079,19 @@ export default function Home() {
               onImageCountChange={handleImageCountChange}
             />
           </div>
+
+        <JobQueuePanel
+          jobs={orderedJobs}
+          selectedJobId={selectedJobId}
+          hasRunningJob={hasRunningJob}
+          jobsError={jobsError}
+          onSelectJob={handleSelectJob}
+          onPause={handlePauseJob}
+          onResume={handleResumeJob}
+          onStart={handleStartJob}
+          onCancel={handleCancelJob}
+          onDelete={handleDeleteJob}
+        />
 
           <GallerySection
             images={images}

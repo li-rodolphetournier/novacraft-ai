@@ -22,9 +22,7 @@ type ModelSettingsPanelProps = {
   clipSkip: number;
   selectedLoras: SelectedLora[];
   availableLoras: LoraOption[];
-  isGenerating: boolean;
-  generationProgress: number | null;
-  lastDuration: number | null;
+  isSubmitting: boolean;
   error: string | null;
   imageCount: number;
   onModelChange: (value: ModelKey) => void;
@@ -35,6 +33,9 @@ type ModelSettingsPanelProps = {
   onClearLoras: () => void;
   onGenerate: () => void;
   onImageCountChange: (value: number) => void;
+  jobLabel?: string | null;
+  jobStatusText?: string | null;
+  jobProgressPercent?: number | null;
 };
 
 export function ModelSettingsPanel({
@@ -45,9 +46,7 @@ export function ModelSettingsPanel({
   clipSkip,
   selectedLoras,
   availableLoras,
-  isGenerating,
-  generationProgress,
-  lastDuration,
+  isSubmitting,
   error,
   imageCount,
   onModelChange,
@@ -58,6 +57,9 @@ export function ModelSettingsPanel({
   onClearLoras,
   onGenerate,
   onImageCountChange,
+  jobLabel,
+  jobStatusText,
+  jobProgressPercent,
 }: ModelSettingsPanelProps) {
   return (
     <div className="w-full space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl">
@@ -193,37 +195,35 @@ export function ModelSettingsPanel({
       </div>
 
       {(mode === "image" || mode === "video") && (
-        <button
-          onClick={onGenerate}
-          disabled={isGenerating}
-          className="relative flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isGenerating ? (
-            <>
-              <span className="mr-2">Génération en cours…</span>
-              {generationProgress !== null && generationProgress < 100 && (
-                <span className="text-[10px] opacity-75">{Math.round(generationProgress)}%</span>
+        <>
+          <button
+            onClick={onGenerate}
+            disabled={isSubmitting}
+            className="relative flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? "Création du job…" : mode === "video" ? "Programmer la vidéo" : "Programmer les images"}
+          </button>
+
+          {(jobLabel || jobStatusText || typeof jobProgressPercent === "number") && (
+            <div className="space-y-1 rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-slate-200">
+              {jobLabel && <p className="font-semibold text-slate-100">{jobLabel}</p>}
+              {typeof jobProgressPercent === "number" && (
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-400 to-purple-500 transition-all duration-300"
+                    style={{ width: `${Math.min(100, Math.max(0, jobProgressPercent))}%` }}
+                  />
+                </div>
               )}
-            </>
-          ) : (
-            "Generate"
+              {jobStatusText && (
+                <p className="text-[11px] text-slate-300">
+                  {jobStatusText}
+                  {typeof jobProgressPercent === "number" && ` (${jobProgressPercent}%)`}
+                </p>
+              )}
+            </div>
           )}
-        </button>
-      )}
-
-      {generationProgress !== null && generationProgress < 100 && (
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-          <div
-            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
-            style={{ width: `${generationProgress}%` }}
-          />
-        </div>
-      )}
-
-      {lastDuration !== null && (
-        <p className="mt-1 text-[10px] text-slate-400">
-          Temps&nbsp;: <span className="font-semibold text-slate-100">{lastDuration.toFixed(1)}&nbsp;s</span>
-        </p>
+        </>
       )}
 
       {error && (
