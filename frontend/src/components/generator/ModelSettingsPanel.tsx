@@ -23,7 +23,6 @@ type ModelSettingsPanelProps = {
   selectedLoras: SelectedLora[];
   availableLoras: LoraOption[];
   isSubmitting: boolean;
-  error: string | null;
   imageCount: number;
   onModelChange: (value: ModelKey) => void;
   onSeedChange: (value: string) => void;
@@ -47,7 +46,6 @@ export function ModelSettingsPanel({
   selectedLoras,
   availableLoras,
   isSubmitting,
-  error,
   imageCount,
   onModelChange,
   onSeedChange,
@@ -224,10 +222,6 @@ export function ModelSettingsPanel({
             </div>
           )}
         </>
-      )}
-
-      {error && (
-        <p className="rounded-xl border border-rose-400/40 bg-rose-500/10 p-2 text-xs text-rose-200">{error}</p>
       )}
 
       {mode === "image" && (

@@ -1,3 +1,6 @@
+"use client";
+
+import { motion } from "framer-motion";
 import type { Mode } from "@/types/generator";
 
 type GeneratorHeaderProps = {
@@ -20,18 +23,20 @@ export function GeneratorHeader({ mode, onModeChange, showNSFW, onToggleNSFW }: 
         </div>
         <div className="flex items-center gap-4 text-xs">
           {(["image", "video", "chat"] as Mode[]).map((value) => (
-            <button
+            <motion.button
               key={value}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               type="button"
               onClick={() => onModeChange(value)}
-              className={`rounded-full px-3 py-1 border ${
+              className={`rounded-full px-3 py-1 border transition ${
                 mode === value ? "bg-white text-slate-900 border-white" : "bg-slate-900/60 text-slate-300 border-white/20"
               }`}
             >
               {value === "image" && "Image"}
               {value === "video" && "Vidéo (beta)"}
               {value === "chat" && "Chat IA Locale"}
-            </button>
+            </motion.button>
           ))}
           <label className="flex items-center gap-2 text-[11px] text-slate-300">
             <input

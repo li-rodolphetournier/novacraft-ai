@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "react-toastify";
 
 import { aspectRatios, promptPresets, resolutions, samplers } from "@/config/generator";
 import {
@@ -23,6 +24,7 @@ import { PromptSettingsPanel } from "@/components/generator/PromptSettingsPanel"
 import { ModelSettingsPanel } from "@/components/generator/ModelSettingsPanel";
 import { GallerySection } from "@/components/generator/GallerySection";
 import { JobQueuePanel } from "@/components/generator/JobQueuePanel";
+import { Modal, PromptModal } from "@/components/common/Modal";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -52,7 +54,6 @@ export default function Home() {
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<Set<string>>(new Set(["sdxl"]));
   const [mode, setMode] = useState<Mode>("image");
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
@@ -72,6 +73,12 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [jobsError, setJobsError] = useState<string | null>(null);
+  const [showNamePrompt, setShowNamePrompt] = useState(false);
+  const [showDescPrompt, setShowDescPrompt] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [presetToDelete, setPresetToDelete] = useState<string | null>(null);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [newPresetDesc, setNewPresetDesc] = useState("");
 
   const processedJobIdsRef = useRef<Set<string>>(new Set());
 
@@ -337,8 +344,9 @@ export default function Home() {
           throw new Error(payload.detail ?? "Action impossible sur ce job.");
         }
         await refreshJobs();
+        toast.success(`Job ${action === "pause" ? "mis en pause" : action === "resume" ? "repris" : action === "start" ? "démarré" : "annulé"} avec succès`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Commande job impossible.");
+        toast.error(err instanceof Error ? err.message : "Commande job impossible.");
       }
     },
     [apiBase, refreshJobs],
@@ -357,8 +365,9 @@ export default function Home() {
           throw new Error(payload.detail ?? "Impossible de supprimer ce job.");
         }
         await refreshJobs();
+        toast.success("Job supprimé avec succès");
       } catch (err) {
-        setJobsError(err instanceof Error ? err.message : "Suppression de job impossible.");
+        toast.error(err instanceof Error ? err.message : "Suppression de job impossible.");
       }
     },
     [apiBase, refreshJobs],
@@ -612,15 +621,14 @@ export default function Home() {
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
-      setError("Ajoutez un prompt pour lancer la génération.");
+      toast.error("Ajoutez un prompt pour lancer la génération.");
       return;
     }
     if (mode === "video" && videoMode === "img2vid" && !initImageBase64) {
-      setError("Veuillez fournir une image de départ ou basculer en mode Texte → Vidéo.");
+      toast.error("Veuillez fournir une image de départ ou basculer en mode Texte → Vidéo.");
       return;
     }
     setIsGenerating(true);
-    setError(null);
 
     try {
       const endpoint = mode === "image" ? "generate" : "generate-video";
@@ -683,10 +691,11 @@ export default function Home() {
 
       if (typeof data.job_id === "string") {
         setSelectedJobId(data.job_id);
+        toast.success("Job créé avec succès !");
       }
       await refreshJobs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible de créer le job.");
+      toast.error(err instanceof Error ? err.message : "Impossible de créer le job.");
     } finally {
       setIsGenerating(false);
     }
@@ -764,22 +773,34 @@ export default function Home() {
   });
 
   const handleAddPreset = () => {
-    const name = window.prompt("Nom du preset ?", "Preset personnalisé");
+    setNewPresetName("");
+    setNewPresetDesc("");
+    setShowNamePrompt(true);
+  };
+
+  const handleNameConfirm = (name: string) => {
     if (!name || !name.trim()) {
+      toast.error("Le nom du preset ne peut pas être vide");
       return;
     }
-    const description =
-      window.prompt("Description (optionnel)", "Preset sauvegardé depuis l'interface") ??
-      "Preset sauvegardé depuis l'interface";
+    setNewPresetName(name.trim());
+    setShowNamePrompt(false);
+    setShowDescPrompt(true);
+  };
+
+  const handleDescConfirm = (description: string) => {
+    const desc = description.trim() || "Preset sauvegardé depuis l'interface";
     const newPreset = {
       ...buildPresetFromState(),
       id: `custom-${crypto.randomUUID()}`,
-      name: name.trim(),
-      description: description.trim(),
+      name: newPresetName,
+      description: desc,
     };
     const updated = [...customPresets, newPreset];
     saveCustomPresetList(updated);
     setActivePresetId(newPreset.id ?? null);
+    setShowDescPrompt(false);
+    toast.success("Preset ajouté avec succès");
   };
 
   const handleSavePreset = () => {
@@ -794,6 +815,7 @@ export default function Home() {
           description: customPresets[index].description,
         };
         saveCustomPresetList(updated);
+        toast.success("Preset enregistré avec succès");
         return;
       }
     }
@@ -805,17 +827,20 @@ export default function Home() {
     if (!preset) {
       return;
     }
-    const confirmed = window.confirm(
-      `Êtes-vous sûr de vouloir supprimer le preset "${preset.name}" ? Cette action est irréversible.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-    const updated = customPresets.filter((p) => p.id !== presetId);
+    setPresetToDelete(presetId);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeletePreset = () => {
+    if (!presetToDelete) return;
+    const updated = customPresets.filter((p) => p.id !== presetToDelete);
     saveCustomPresetList(updated);
-    if (activePresetId === presetId) {
+    if (activePresetId === presetToDelete) {
       setActivePresetId(null);
     }
+    setShowDeleteConfirm(false);
+    setPresetToDelete(null);
+    toast.success("Preset supprimé avec succès");
   };
 
   const handleLoadHistory = (entry: HistoryEntry) => {
@@ -897,6 +922,52 @@ export default function Home() {
       saveImages(updated);
       return updated;
     });
+    toast.success("Image supprimée");
+  };
+
+  const handleDeleteVideo = async (id: string) => {
+    // Supprimer côté backend
+    try {
+      await fetch(`${apiBase}/storage/video/${id}`, { method: "DELETE" });
+    } catch (err) {
+      console.warn("Impossible de supprimer la vidéo côté backend", err);
+    }
+    
+    // Supprimer côté frontend
+    setVideos((prev) => prev.filter((vid) => vid.id !== id));
+    toast.success("Vidéo supprimée");
+  };
+
+  const handleCopyVideo = async (video: GeneratedVideo) => {
+    try {
+      await navigator.clipboard.writeText(video.mp4Base64);
+      toast.success("Base64 de la vidéo copié dans le presse-papiers");
+    } catch (err) {
+      toast.error("Impossible de copier la vidéo");
+    }
+  };
+
+  const handleExportVideo = (video: GeneratedVideo) => {
+    try {
+      const byteCharacters = atob(video.mp4Base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "video/mp4" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `video-${video.id}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Vidéo téléchargée");
+    } catch (err) {
+      toast.error("Impossible de télécharger la vidéo");
+    }
   };
 
   const handleSendMessage = async () => {
@@ -929,7 +1000,7 @@ export default function Home() {
         { role: "assistant", content: data.message.content },
       ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur de chat");
+      toast.error(err instanceof Error ? err.message : "Erreur de chat");
       setChatMessages((prev) => [
         ...prev,
         {
@@ -1123,7 +1194,6 @@ export default function Home() {
               jobLabel={displayJobLabel}
               jobStatusText={displayJobStatusText}
               jobProgressPercent={displayJobProgressPercent}
-              error={error}
               imageCount={imageCount}
               onModelChange={setModel}
               onSeedChange={setSeed}
@@ -1158,9 +1228,54 @@ export default function Home() {
             onCopyImage={handleCopyBase64}
             onExportImage={handleExportImage}
             onClearImages={handleClearGallery}
+            onDeleteVideo={handleDeleteVideo}
+            onCopyVideo={handleCopyVideo}
+            onExportVideo={handleExportVideo}
           />
         </section>
       </main>
+
+      <PromptModal
+        isOpen={showNamePrompt}
+        onClose={() => setShowNamePrompt(false)}
+        title="Nom du preset"
+        placeholder="Preset personnalisé"
+        defaultValue="Preset personnalisé"
+        onConfirm={handleNameConfirm}
+        confirmLabel="Suivant"
+        cancelLabel="Annuler"
+      />
+
+      <PromptModal
+        isOpen={showDescPrompt}
+        onClose={() => setShowDescPrompt(false)}
+        title="Description du preset (optionnel)"
+        placeholder="Preset sauvegardé depuis l'interface"
+        defaultValue="Preset sauvegardé depuis l'interface"
+        onConfirm={handleDescConfirm}
+        confirmLabel="Créer"
+        cancelLabel="Annuler"
+      />
+
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={() => {
+          setShowDeleteConfirm(false);
+          setPresetToDelete(null);
+        }}
+        title="Supprimer le preset"
+        onConfirm={confirmDeletePreset}
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
+      >
+        <p>
+          Êtes-vous sûr de vouloir supprimer le preset{" "}
+          <strong>
+            "{customPresets.find((p) => p.id === presetToDelete)?.name}"
+          </strong>
+          ? Cette action est irréversible.
+        </p>
+      </Modal>
     </div>
   );
 }

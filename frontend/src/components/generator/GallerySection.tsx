@@ -1,4 +1,7 @@
+"use client";
+
 import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import type {
   GeneratedImage,
   GeneratedVideo,
@@ -15,6 +18,9 @@ type GallerySectionProps = {
   onCopyImage: (image: GeneratedImage) => void;
   onExportImage: (image: GeneratedImage) => void;
   onClearImages?: () => void;
+  onDeleteVideo: (id: string) => void;
+  onCopyVideo: (video: GeneratedVideo) => void;
+  onExportVideo: (video: GeneratedVideo) => void;
 };
 
 export function GallerySection({
@@ -26,6 +32,9 @@ export function GallerySection({
   onCopyImage,
   onExportImage,
   onClearImages,
+  onDeleteVideo,
+  onCopyVideo,
+  onExportVideo,
 }: GallerySectionProps) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl">
@@ -52,40 +61,64 @@ export function GallerySection({
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {images.length === 0 && (
-          <div className="col-span-full rounded-3xl border border-dashed border-white/20 p-10 text-center text-sm text-slate-400">
-            Les rendus apparaîtront ici.
-          </div>
-        )}
-        {images.map((image) => (
-          <ImageCard
-            key={image.id}
-            image={image}
-            onDelete={onDeleteImage}
-            onCopy={onCopyImage}
-            onExport={onExportImage}
-            models={models}
-            samplers={samplers}
-          />
-        ))}
+        <AnimatePresence mode="popLayout">
+          {images.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="col-span-full rounded-3xl border border-dashed border-white/20 p-10 text-center text-sm text-slate-400"
+            >
+              Les rendus apparaîtront ici.
+            </motion.div>
+          )}
+          {images.map((image, index) => (
+            <motion.div
+              key={image.id}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.2, delay: index * 0.05 }}
+            >
+              <ImageCard
+                image={image}
+                onDelete={onDeleteImage}
+                onCopy={onCopyImage}
+                onExport={onExportImage}
+                models={models}
+                samplers={samplers}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
 
       {videos.length > 0 && (
         <div className="mt-10">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-[0.2em]">Vidéos</h3>
+            {videos.length > 0 && (
+              <button
+                onClick={() => {
+                  videos.forEach((video) => onDeleteVideo(video.id));
+                }}
+                className="text-xs uppercase tracking-[0.2em] text-slate-400 transition hover:text-white"
+                type="button"
+              >
+                Effacer toutes
+              </button>
+            )}
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            {videos.map((video) => (
-              <div key={video.id} className="rounded-3xl border border-white/10 bg-black/40 p-2">
-                <video controls className="w-full rounded-2xl" src={`data:video/mp4;base64,${video.mp4Base64}`} />
-                {video.durationSeconds != null && (
-                  <p className="mt-1 text-xs text-slate-400">
-                    Durée&nbsp;:{" "}
-                    <span className="font-semibold text-slate-100">{video.durationSeconds.toFixed(1)}&nbsp;s</span>
-                  </p>
-                )}
-              </div>
+            {videos.map((video, index) => (
+              <VideoCard
+                key={video.id}
+                video={video}
+                index={index}
+                onDelete={onDeleteVideo}
+                onCopy={onCopyVideo}
+                onExport={onExportVideo}
+              />
             ))}
           </div>
         </div>
@@ -110,7 +143,10 @@ function ImageCard({ image, models, samplers, onDelete, onCopy, onExport }: Imag
   const getModelLabel = (value?: string) => models.find((m) => m.value === value)?.label || value || "N/A";
 
   return (
-    <div className="group relative rounded-3xl border border-white/10 bg-black/30 p-2 transition hover:border-indigo-400">
+    <motion.div
+      whileHover={{ scale: 1.02 }}
+      className="group relative rounded-3xl border border-white/10 bg-black/30 p-2 transition hover:border-indigo-400"
+    >
       <button
         type="button"
         onClick={() => onDelete(image.id)}
@@ -223,7 +259,84 @@ function ImageCard({ image, models, samplers, onDelete, onCopy, onExport }: Imag
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
+  );
+}
+
+type VideoCardProps = {
+  video: GeneratedVideo;
+  index: number;
+  onDelete: (id: string) => void;
+  onCopy: (video: GeneratedVideo) => void;
+  onExport: (video: GeneratedVideo) => void;
+};
+
+function VideoCard({ video, index, onDelete, onCopy, onExport }: VideoCardProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.1 }}
+      whileHover={{ scale: 1.02 }}
+      className="group relative rounded-3xl border border-white/10 bg-black/40 p-2 transition hover:border-indigo-400"
+    >
+      <button
+        type="button"
+        onClick={() => onDelete(video.id)}
+        className="absolute right-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-white/15 bg-black/80 text-xs text-slate-300 opacity-0 transition group-hover:opacity-100 hover:border-rose-400 hover:text-rose-200"
+        title="Retirer cette vidéo de la galerie"
+      >
+        ×
+      </button>
+      <video controls className="w-full rounded-2xl" src={`data:video/mp4;base64,${video.mp4Base64}`} />
+      <div className="mt-2 space-y-2">
+        {video.durationSeconds != null && (
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>
+              Durée&nbsp;: <span className="font-semibold text-slate-100">{video.durationSeconds.toFixed(1)}&nbsp;s</span>
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => onCopy(video)}
+                className="text-indigo-300 transition hover:text-white"
+                title="Copier base64"
+              >
+                Copier
+              </button>
+              <button
+                type="button"
+                onClick={() => onExport(video)}
+                className="text-green-300 transition hover:text-white"
+                title="Télécharger MP4"
+              >
+                Télécharger
+              </button>
+            </div>
+          </div>
+        )}
+        {!video.durationSeconds && (
+          <div className="flex justify-end gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => onCopy(video)}
+              className="text-indigo-300 transition hover:text-white"
+              title="Copier base64"
+            >
+              Copier
+            </button>
+            <button
+              type="button"
+              onClick={() => onExport(video)}
+              className="text-green-300 transition hover:text-white"
+              title="Télécharger MP4"
+            >
+              Télécharger
+            </button>
+          </div>
+        )}
+      </div>
+    </motion.div>
   );
 }
 

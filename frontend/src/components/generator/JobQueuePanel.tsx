@@ -1,3 +1,7 @@
+"use client";
+
+import { motion } from "framer-motion";
+import { FaImage, FaVideo, FaTimes } from "react-icons/fa";
 import type { Job } from "@/types/generator";
 
 type JobQueuePanelProps = {
@@ -31,9 +35,9 @@ const statusColors: Record<string, string> = {
   cancelled: "bg-slate-500/20 text-slate-200 border-slate-400/30",
 };
 
-const typeIcon: Record<string, string> = {
-  image: "🖼️",
-  video: "🎞️",
+const typeIconMap = {
+  image: FaImage,
+  video: FaVideo,
 };
 
 export function JobQueuePanel({
@@ -75,7 +79,7 @@ export function JobQueuePanel({
                 ? Math.min(100, Math.round((progress.current / progress.total) * 100))
                 : null;
             const isSelected = selectedJobId === job.id;
-            const icon = typeIcon[job.type] ?? "⚙️";
+            const IconComponent = typeIconMap[job.type as keyof typeof typeIconMap] || FaImage;
 
             const startDisabled = hasRunningJob;
             const resumeDisabled = hasRunningJob;
@@ -84,8 +88,12 @@ export function JobQueuePanel({
             const canShowDeleteIcon = true;
 
             return (
-              <div
+              <motion.div
                 key={job.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
                 className={`relative rounded-2xl border p-3 text-xs transition ${
                   isSelected ? "border-indigo-400 bg-indigo-500/10" : "border-white/10 bg-slate-900/40"
                 }`}
@@ -95,7 +103,7 @@ export function JobQueuePanel({
                   className="flex w-full items-start gap-3 text-left"
                   onClick={() => onSelectJob(job.id)}
                 >
-                  <span className="text-2xl leading-none">{icon}</span>
+                  <IconComponent className="text-xl text-indigo-400" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
@@ -146,10 +154,10 @@ export function JobQueuePanel({
                         onDelete(job.id);
                       }
                     }}
-                    className="absolute right-2 top-2 rounded-full border border-rose-400/40 px-2 py-0.5 text-[12px] text-rose-200 hover:bg-rose-400/10"
+                    className="absolute right-2 top-2 rounded-full border border-rose-400/40 p-1.5 text-rose-200 hover:bg-rose-400/10 transition"
                     aria-label="Retirer le job"
                   >
-                    ✕
+                    <FaTimes className="text-xs" />
                   </button>
                 )}
 
@@ -237,7 +245,7 @@ export function JobQueuePanel({
                     <p className="text-[10px] text-slate-400">Résultat stocké dans la galerie / historique.</p>
                   )}
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>

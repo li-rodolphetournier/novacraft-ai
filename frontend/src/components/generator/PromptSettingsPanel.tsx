@@ -1,3 +1,8 @@
+"use client";
+
+import { ChangeEvent } from "react";
+import { motion } from "framer-motion";
+import { FaStar, FaTimes } from "react-icons/fa";
 import type {
   Mode,
   PromptPreset,
@@ -6,7 +11,6 @@ import type {
   VideoMode,
 } from "@/types/generator";
 import type { AspectRatioOption } from "@/config/generator";
-import { ChangeEvent } from "react";
 
 type PromptSettingsPanelProps = {
   mode: Mode;
@@ -138,20 +142,22 @@ export function PromptSettingsPanel({
                 type="button"
               >
                 {preset.name}
-                {isCustom && " ★"}
+                {isCustom && <FaStar className="ml-1 inline text-yellow-400" size={10} />}
               </button>
               {isCustom && preset.id && (
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={(e) => {
                     e.stopPropagation();
                     onDeletePreset(preset.id!);
                   }}
-                  className="rounded-lg border border-rose-400/40 bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-200 transition hover:bg-rose-500/20"
+                  className="rounded-lg border border-rose-400/40 bg-rose-500/10 p-1.5 text-rose-200 transition hover:bg-rose-500/20"
                   title="Supprimer ce preset"
                   type="button"
                 >
-                  ✕
-                </button>
+                  <FaTimes size={10} />
+                </motion.button>
               )}
             </div>
           );
