@@ -800,6 +800,24 @@ export default function Home() {
     handleAddPreset();
   };
 
+  const handleDeletePreset = (presetId: string) => {
+    const preset = customPresets.find((p) => p.id === presetId);
+    if (!preset) {
+      return;
+    }
+    const confirmed = window.confirm(
+      `Êtes-vous sûr de vouloir supprimer le preset "${preset.name}" ? Cette action est irréversible.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    const updated = customPresets.filter((p) => p.id !== presetId);
+    saveCustomPresetList(updated);
+    if (activePresetId === presetId) {
+      setActivePresetId(null);
+    }
+  };
+
   const handleLoadHistory = (entry: HistoryEntry) => {
     setPrompt(entry.prompt);
     setNegativePrompt(entry.negativePrompt);
@@ -1088,6 +1106,7 @@ export default function Home() {
               onChatReset={handleChatReset}
               onAddPreset={handleAddPreset}
               onSavePreset={handleSavePreset}
+              onDeletePreset={handleDeletePreset}
               activePresetId={activePresetId}
               customPresetIds={customPresetIds}
             />

@@ -55,6 +55,7 @@ type PromptSettingsPanelProps = {
   onChatReset: () => void;
   onAddPreset: () => void;
   onSavePreset: () => void;
+  onDeletePreset: (presetId: string) => void;
   activePresetId: string | null;
   customPresetIds: Set<string>;
   selectedModelLabel: string;
@@ -107,6 +108,7 @@ export function PromptSettingsPanel({
   onChatReset,
   onAddPreset,
   onSavePreset,
+  onDeletePreset,
   activePresetId,
   customPresetIds,
   selectedModelLabel,
@@ -124,20 +126,34 @@ export function PromptSettingsPanel({
           const isActive = preset.id && activePresetId === preset.id;
           const isCustom = preset.id ? customPresetIds.has(preset.id) : false;
           return (
-            <button
-              key={`${preset.id ?? preset.name}`}
-              onClick={() => onPresetApply(preset)}
-              className={`rounded-lg border px-2 py-0.5 text-[10px] uppercase tracking-wide transition ${
-                isActive
-                  ? "border-indigo-400 bg-indigo-500/20 text-white"
-                  : "border-white/10 bg-slate-900/60 text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-              title={preset.description}
-              type="button"
-            >
-              {preset.name}
-              {isCustom && " ★"}
-            </button>
+            <div key={`${preset.id ?? preset.name}`} className="flex items-center gap-1">
+              <button
+                onClick={() => onPresetApply(preset)}
+                className={`flex-1 rounded-lg border px-2 py-0.5 text-[10px] uppercase tracking-wide transition ${
+                  isActive
+                    ? "border-indigo-400 bg-indigo-500/20 text-white"
+                    : "border-white/10 bg-slate-900/60 text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+                title={preset.description}
+                type="button"
+              >
+                {preset.name}
+                {isCustom && " ★"}
+              </button>
+              {isCustom && preset.id && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeletePreset(preset.id!);
+                  }}
+                  className="rounded-lg border border-rose-400/40 bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-200 transition hover:bg-rose-500/20"
+                  title="Supprimer ce preset"
+                  type="button"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           );
         })}
       </div>
