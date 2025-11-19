@@ -1,6 +1,55 @@
+# Modèles et LoRAs (fichiers volumineux, téléchargés par l'utilisateur)
 backend/models/
 backend/models/lora/
+
+# Données personnelles (créations, prompts, historique)
 backend/storage/images/
 backend/storage/videos/
+backend/storage/jobs/
 backend/storage/*.json
+
+# Environnements virtuels Python
+backend/venv/
+backend/.venv/
+backend/env/
+backend/.env/
+
+# Fichiers Python compilés et cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Fichiers de configuration avec variables d'environnement
+.env
+.env.local
+.env.*.local
+*.env
+
+# Logs
+*.log
+logs/
+
+# Node.js / Frontend
+node_modules/
+frontend/node_modules/
+.next/
+out/
+frontend/.next/
+frontend/out/
+
+# Fichiers de build TypeScript
+*.tsbuildinfo
+frontend/*.tsbuildinfo
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
 

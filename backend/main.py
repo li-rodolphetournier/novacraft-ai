@@ -30,6 +30,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from pydantic import BaseModel, Field
 
+from job_manager import (
+    JobCancelledError,
+    JobManager,
+    JobPauseRequested,
+)
 from model_registry import (
     LORA_LIBRARY,
     MODEL_CONFIG,
@@ -55,6 +60,7 @@ STORAGE_VIDEOS_DIR = STORAGE_DIR / "videos"
 STORAGE_IMAGES_JSON = STORAGE_DIR / "gallery-images.json"
 STORAGE_VIDEOS_JSON = STORAGE_DIR / "gallery-videos.json"
 STORAGE_HISTORY_JSON = STORAGE_DIR / "history.json"
+JOBS_STORAGE_DIR = STORAGE_DIR / "jobs"
 MAX_HISTORY_ENTRIES = 500
 
 # Créer les dossiers s'ils n'existent pas
@@ -65,6 +71,9 @@ STORAGE_HISTORY_JSON.parent.mkdir(parents=True, exist_ok=True)
 for json_path in (STORAGE_IMAGES_JSON, STORAGE_VIDEOS_JSON, STORAGE_HISTORY_JSON):
     if not json_path.exists():
         json_path.write_text("[]", encoding="utf-8")
+
+# Gestionnaire de jobs persistant
+job_manager = JobManager(JOBS_STORAGE_DIR)
 
 
 class GenerateRequest(BaseModel):
@@ -145,9 +154,11 @@ class GenerateVideoRequest(BaseModel):
     negative_prompt: str | None = ""
     num_frames: int = Field(default=8, ge=6, le=16)  # Réduit pour économiser VRAM
     fps: int = Field(default=6, ge=3, le=30)
-    resolution: ResolutionKey = "512x512"
+    resolution: ResolutionKey | str = "512x512"
     seed: int = -1
     init_image_base64: str | None = None
+    mode: Literal["img2vid", "text2vid"] = "img2vid"
+    image_settings: GenerateRequest | None = None
 
 
 class GeneratedVideo(BaseModel):
@@ -379,6 +390,426 @@ def get_video_pipeline() -> StableVideoDiffusionPipeline:
     return pipe
 
 
+def _ensure_model_enabled(model_key: ModelKey) -> None:
+    if model_key not in ENABLED_MODELS:
+        allowed = ", ".join(sorted(ENABLED_MODELS)) or "sdxl"
+        raise RuntimeError(
+            f"Le modèle '{model_key}' est désactivé. "
+            f"Modèles disponibles actuellement: {allowed}. "
+            "Définissez la variable d'environnement ENABLED_MODELS pour en activer d'autres."
+        )
+
+
+def _compute_image_dimensions(payload: GenerateRequest) -> tuple[int, int]:
+    if payload.width and payload.height:
+        width = (payload.width // 64) * 64
+        height = (payload.height // 64) * 64
+    else:
+        if payload.resolution in RESOLUTIONS:
+            width, height = RESOLUTIONS[payload.resolution]
+        else:
+            try:
+                parts = payload.resolution.split("x")
+                width = (int(parts[0]) // 64) * 64
+                height = (int(parts[1]) // 64) * 64
+            except (ValueError, IndexError):
+                width, height = RESOLUTIONS["1024x1024"]
+    width = max(64, width)
+    height = max(64, height)
+    return width, height
+
+
+def _build_history_entry(
+    images: list[Dict[str, Any]],
+    payload: GenerateRequest,
+    width: int,
+    height: int,
+    seed: int,
+) -> Dict[str, Any]:
+    if not images:
+        return {}
+    return {
+        "id": str(uuid.uuid4()),
+        "prompt": payload.prompt,
+        "negative_prompt": payload.negative_prompt or "",
+        "model": payload.model,
+        "timestamp": datetime.now().isoformat(),
+        "thumbnail_id": images[0]["id"],
+        "settings": {
+            "sampler": payload.sampler,
+            "steps": payload.steps,
+            "cfg_scale": payload.cfg_scale,
+            "clip_skip": payload.clip_skip,
+            "resolution": f"{width}x{height}",
+            "seed": seed,
+            "use_aspect_ratio": bool(payload.width and payload.height),
+            "aspect_ratio": payload.resolution if not (payload.width and payload.height) else None,
+            "custom_width": width,
+            "custom_height": height,
+            "loras": [
+                {"key": lora.key, "weight": lora.weight}
+                for lora in payload.additional_loras
+            ],
+        },
+    }
+
+
+def run_image_generation_job(payload: GenerateRequest, job_id: str | None = None) -> Dict[str, Any]:
+    _ensure_model_enabled(payload.model)
+
+    if job_id:
+        job_manager.raise_if_interrupted(job_id)
+
+    pipe = load_pipeline(payload.model)
+    apply_sampler(pipe, payload.sampler)
+
+    width, height = _compute_image_dimensions(payload)
+    seed = payload.seed if payload.seed >= 0 else random.randint(0, 2**32 - 1)
+    generator = torch.Generator(device=DEVICE).manual_seed(seed)
+    total_steps = max(payload.steps, 1)
+
+    applied_loras_meta: list[AppliedLoRA] = []
+    start = time.perf_counter()
+
+    if DEVICE == "cuda" and hasattr(pipe, "enable_vae_slicing"):
+        try:
+            pipe.enable_vae_slicing()
+        except Exception:
+            pass
+
+    try:
+        applied_loras_meta = _apply_request_loras(pipe, payload)
+        _clear_gpu_memory()
+
+        if job_id:
+            job_manager.raise_if_interrupted(job_id)
+            job_manager.update_progress(
+                job_id,
+                current=0,
+                total=total_steps,
+                message="Initialisation du pipeline…",
+            )
+
+            def diffusion_callback(step: int, _timestep: int, _kwargs: Dict[str, Any]) -> None:
+                current_step = min(total_steps, step + 1)
+                job_manager.update_progress(
+                    job_id,
+                    current=current_step,
+                    total=total_steps,
+                    message=f"Étape {current_step}/{total_steps}",
+                )
+                job_manager.raise_if_interrupted(job_id)
+        else:
+            diffusion_callback = None
+
+        with torch.inference_mode():
+            try:
+                result = pipe(
+                    prompt=payload.prompt,
+                    negative_prompt=payload.negative_prompt or "",
+                    guidance_scale=payload.cfg_scale,
+                    num_inference_steps=payload.steps,
+                    width=width,
+                    height=height,
+                    generator=generator,
+                    num_images_per_prompt=payload.image_count,
+                    callback=diffusion_callback,
+                    callback_steps=1,
+                )
+            except (torch.cuda.OutOfMemoryError, RuntimeError) as err:
+                _clear_gpu_memory()
+                for cached_key in list(PIPELINE_CACHE.keys()):
+                    if cached_key != payload.model:
+                        _unload_pipeline(cached_key)
+                _clear_gpu_memory()
+
+                suggestions = []
+                if payload.image_count > 1:
+                    suggestions.append(f"réduire le nombre d'images ({payload.image_count} → 1)")
+                if width * height > 1024 * 1024:
+                    suggestions.append(f"réduire la résolution ({width}x{height} → 1024x1024)")
+                if payload.steps > 30:
+                    suggestions.append(f"réduire les steps ({payload.steps} → 30)")
+                suggestion_text = ". ".join(suggestions) if suggestions else "réduire la résolution ou le nombre d'images"
+
+                raise RuntimeError(
+                    "Mémoire GPU insuffisante (erreur cuDNN/PyTorch). "
+                    f"Suggestions: {suggestion_text}. "
+                    f"Erreur: {err}"
+                ) from err
+
+    finally:
+        _reset_pipeline_adapters(pipe)
+        _clear_gpu_memory()
+
+    duration = time.perf_counter() - start
+    images_meta: list[Dict[str, Any]] = []
+
+    for idx, image in enumerate(result.images):
+        if job_id:
+            job_manager.raise_if_interrupted(job_id)
+
+        image_id = f"{payload.model}-{seed + idx}-{int(time.time())}"
+        base64_data = pil_to_base64(image)
+        _save_image_file(image_id, base64_data)
+
+        image_meta = {
+            "id": image_id,
+            "seed": seed + idx,
+            "model": payload.model,
+            "sampler": payload.sampler,
+            "steps": payload.steps,
+            "cfg_scale": payload.cfg_scale,
+            "resolution": f"{width}x{height}",
+            "prompt": payload.prompt,
+            "negative_prompt": payload.negative_prompt or "",
+            "clip_skip": payload.clip_skip,
+            "loras": [
+                {"key": lora.key, "label": lora.label, "weight": lora.weight, "type": lora.type}
+                for lora in applied_loras_meta
+            ] if applied_loras_meta else [],
+            "timestamp": datetime.now().isoformat(),
+            "file_path": f"images/{image_id}.png",
+            "base64": base64_data,
+        }
+
+        stored_images = _load_storage_json(STORAGE_IMAGES_JSON)
+        stored_images.append(image_meta)
+        stored_images = stored_images[-1000:]
+        _save_storage_json(STORAGE_IMAGES_JSON, stored_images)
+
+        images_meta.append(image_meta)
+
+        if job_id:
+            job_manager.update_progress(
+                job_id,
+                current=total_steps,
+                total=total_steps,
+                message=f"Sauvegarde image {idx + 1}/{payload.image_count}",
+            )
+
+    history_entry = _build_history_entry(images_meta, payload, width, height, seed)
+    if history_entry:
+        _append_history_entry(history_entry)
+
+    return {
+        "images": images_meta,
+        "duration_seconds": duration,
+        "history_entry_id": history_entry.get("id") if history_entry else None,
+    }
+
+
+def run_video_generation_job(payload: GenerateVideoRequest, job_id: str | None = None) -> Dict[str, Any]:
+    if job_id:
+        job_manager.raise_if_interrupted(job_id)
+
+    pipe = get_video_pipeline()
+
+    def _parse_resolution(value: ResolutionKey | str) -> tuple[int, int]:
+        if value in RESOLUTIONS:
+            return RESOLUTIONS[value]  # type: ignore[index]
+        try:
+            parts = str(value).lower().split("x")
+            width = (int(parts[0]) // 64) * 64
+            height = (int(parts[1]) // 64) * 64
+            width = max(64, width)
+            height = max(64, height)
+            return width, height
+        except (ValueError, IndexError):
+            return RESOLUTIONS["512x512"]
+
+    width, height = _parse_resolution(payload.resolution)
+    max_video_size = 384
+
+    seed = payload.seed if payload.seed >= 0 else random.randint(0, 2**32 - 1)
+    generator = torch.Generator(device=DEVICE).manual_seed(seed)
+
+    init_base64 = payload.init_image_base64
+    prep_steps = 0
+    settings_data: Dict[str, Any] | None = None
+
+    if payload.mode == "text2vid" and not init_base64:
+        settings_data = payload.image_settings.dict() if payload.image_settings else {}
+        settings_data.update(
+            {
+                "prompt": payload.prompt,
+                "negative_prompt": payload.negative_prompt or "",
+                "resolution": settings_data.get("resolution") or payload.resolution,
+                "seed": payload.seed,
+                "image_count": 1,
+            }
+        )
+        settings_data.setdefault("sampler", "euler")
+        settings_data.setdefault("steps", 30)
+        settings_data.setdefault("cfg_scale", 7.0)
+        settings_data.setdefault("clip_skip", 2)
+        settings_data.setdefault("model", "sdxl")
+        settings_data.setdefault("additional_loras", [])
+        prep_steps = settings_data["steps"]
+
+        if settings_data.get("width") is None and settings_data.get("height") is None:
+            parsed_w, parsed_h = _parse_resolution(settings_data["resolution"])
+            settings_data["width"] = parsed_w
+            settings_data["height"] = parsed_h
+
+    total_steps = payload.num_frames + prep_steps
+    offset = prep_steps
+
+    if settings_data is not None:
+        if job_id:
+            job_manager.update_progress(
+                job_id,
+                current=0,
+                total=total_steps,
+                message="Génération de l'image de référence…",
+            )
+        image_request = GenerateRequest(**settings_data)
+        image_result = run_image_generation_job(image_request, job_id=None)
+        if not image_result["images"]:
+            raise RuntimeError("Impossible de générer l'image de référence pour la vidéo.")
+        init_base64 = image_result["images"][0]["base64"]
+
+        if job_id:
+            job_manager.update_progress(
+                job_id,
+                current=prep_steps,
+                total=total_steps,
+                message="Image de référence prête, conversion en vidéo…",
+            )
+
+    if not init_base64:
+        raise RuntimeError("init_image_base64 est requis pour la vidéo.")
+
+    try:
+        img_bytes = base64.b64decode(init_base64)
+        init_image = Image.open(BytesIO(img_bytes)).convert("RGB")
+        target_w, target_h = init_image.size
+        max_dim = max(target_w, target_h)
+        if max_dim > max_video_size:
+            scale = max_video_size / max_dim
+            target_w = int(target_w * scale)
+            target_h = int(target_h * scale)
+        target_w = max(64, (target_w // 64) * 64)
+        target_h = max(64, (target_h // 64) * 64)
+        width, height = target_w, target_h
+        init_image = init_image.resize((width, height))
+    except Exception as err:  # pylint: disable=broad-except
+        raise RuntimeError(f"Image invalide: {err}") from err
+
+    if job_id:
+        job_manager.raise_if_interrupted(job_id)
+
+    start = time.perf_counter()
+    try:
+        with torch.inference_mode():
+            result = pipe(
+                image=init_image,
+                num_frames=payload.num_frames,
+                generator=generator,
+                decode_chunk_size=1,
+            )
+    except RuntimeError as err:
+        if "out of memory" in str(err).lower() or "cuda" in str(err).lower():
+            raise RuntimeError(
+                "VRAM insuffisante (OOM). Réduisez num_frames (8 max) ou la résolution (384x384 max)."
+            ) from err
+        raise RuntimeError(f"Erreur génération vidéo: {err}") from err
+    duration = time.perf_counter() - start
+
+    frames = result.frames[0]
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+        tmp_path = tmp_file.name
+
+    try:
+        writer = imageio.get_writer(
+            tmp_path, format="ffmpeg", fps=payload.fps, codec="libx264", pixelformat="yuv420p"
+        )
+        for idx, frame in enumerate(frames):
+            if hasattr(frame, "convert"):
+                frame_array = np.array(frame.convert("RGB"))
+            else:
+                frame_array = np.array(frame)
+            writer.append_data(frame_array)
+            if job_id:
+                job_manager.update_progress(
+                    job_id,
+                    current=offset + idx + 1,
+                    total=total_steps,
+                    message=f"Frame {idx + 1}/{len(frames)}",
+                )
+        writer.close()
+
+        with open(tmp_path, "rb") as f:
+            mp4_bytes = f.read()
+        mp4_b64 = base64.b64encode(mp4_bytes).decode("utf-8")
+
+        video_id = f"video-{seed}-{int(time.time())}"
+        _save_video_file(video_id, mp4_b64)
+
+        video_meta = {
+            "id": video_id,
+            "seed": seed,
+            "num_frames": payload.num_frames,
+            "fps": payload.fps,
+            "prompt": payload.prompt,
+            "negative_prompt": payload.negative_prompt or "",
+            "timestamp": datetime.now().isoformat(),
+            "file_path": f"videos/{video_id}.mp4",
+            "duration_seconds": duration,
+            "mode": payload.mode,
+        }
+
+        stored_videos = _load_storage_json(STORAGE_VIDEOS_JSON)
+        stored_videos.append(video_meta)
+        stored_videos = stored_videos[-500:]
+        _save_storage_json(STORAGE_VIDEOS_JSON, stored_videos)
+
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    return {
+        "video": {
+            "id": video_id,
+            "mp4_base64": mp4_b64,
+            "file_path": f"videos/{video_id}.mp4",
+        },
+        "duration_seconds": duration,
+    }
+
+
+def _image_job_executor(job_data: Dict[str, Any], manager: JobManager) -> None:
+    payload = GenerateRequest(**job_data["payload"])
+    result = run_image_generation_job(payload, job_id=job_data["id"])
+    manager.set_result(job_data["id"], result)
+    manager.update_progress(
+        job_data["id"],
+        current=max(payload.steps, 1),
+        total=max(payload.steps, 1),
+        message="Images générées",
+    )
+
+
+def _video_job_executor(job_data: Dict[str, Any], manager: JobManager) -> None:
+    payload = GenerateVideoRequest(**job_data["payload"])
+    result = run_video_generation_job(payload, job_id=job_data["id"])
+    manager.set_result(job_data["id"], result)
+    prep_steps = 0
+    if payload.mode == "text2vid":
+        prep_steps = payload.image_settings.steps if payload.image_settings else 30
+    total_steps = payload.num_frames + prep_steps
+    manager.update_progress(
+        job_data["id"],
+        current=total_steps,
+        total=total_steps,
+        message="Vidéo générée",
+    )
+
+
+job_manager.register_executor("image", _image_job_executor)
+job_manager.register_executor("video", _video_job_executor)
+
 def apply_sampler(
     pipe: StableDiffusionPipeline | StableDiffusionXLPipeline, sampler_name: SamplerName
 ):
@@ -548,6 +979,16 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def _startup_events():
+    job_manager.start()
+
+
+@app.on_event("shutdown")
+def _shutdown_events():
+    job_manager.stop()
+
+
 @app.get("/health")
 def health():
     """Endpoint de santé avec informations sur le device."""
@@ -673,329 +1114,106 @@ def chat_with_ollama(payload: ChatRequest):
     return ChatResponseModel(message=chat_message, raw=resp_json)
 
 
-@app.post("/generate", response_model=GenerateResponse)
+@app.post("/generate")
 def generate(payload: GenerateRequest):
-    if payload.model not in ENABLED_MODELS:
-        allowed = ", ".join(sorted(ENABLED_MODELS)) or "sdxl"
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Le modèle '{payload.model}' est désactivé. "
-                f"Modèles disponibles actuellement: {allowed}. "
-                "Définissez la variable d'environnement ENABLED_MODELS pour en activer d'autres."
-            ),
-        )
-
     try:
-        pipe = load_pipeline(payload.model)
-    except FileNotFoundError as err:
-        raise HTTPException(status_code=400, detail=str(err)) from err
-    except Exception as err:  # pylint: disable=broad-except
-        raise HTTPException(status_code=500, detail=str(err)) from err
-
-    apply_sampler(pipe, payload.sampler)
-    
-    # Utilise width/height personnalisés si fournis, sinon utilise la résolution standard
-    if payload.width and payload.height:
-        width = payload.width
-        height = payload.height
-        # Arrondit aux multiples de 64 (requis par SDXL)
-        width = (width // 64) * 64
-        height = (height // 64) * 64
-    else:
-        # Parse la résolution (peut être "1024x1024" ou "customWxH")
-        if payload.resolution in RESOLUTIONS:
-            width, height = RESOLUTIONS[payload.resolution]
-        else:
-            # Parse format "WxH"
-            try:
-                parts = payload.resolution.split("x")
-                width = int(parts[0])
-                height = int(parts[1])
-                width = (width // 64) * 64
-                height = (height // 64) * 64
-            except (ValueError, IndexError):
-                width, height = RESOLUTIONS["1024x1024"]  # Fallback
-
-    seed = payload.seed if payload.seed >= 0 else random.randint(0, 2**32 - 1)
-    generator = torch.Generator(device=DEVICE).manual_seed(seed)
-
-    applied_loras_meta: list[AppliedLoRA] = []
-    start = time.perf_counter()
-    
-    # Optimiser le VAE pour réduire la consommation mémoire
-    if DEVICE == "cuda" and hasattr(pipe, "enable_vae_slicing"):
-        try:
-            pipe.enable_vae_slicing()
-        except Exception:
-            pass
-    
-    try:
-        applied_loras_meta = _apply_request_loras(pipe, payload)
-        
-        # Nettoyer la mémoire avant la génération
-        _clear_gpu_memory()
-        
-        with torch.inference_mode():
-            try:
-                result = pipe(
-                    prompt=payload.prompt,
-                    negative_prompt=payload.negative_prompt or "",
-                    guidance_scale=payload.cfg_scale,
-                    num_inference_steps=payload.steps,
-                    width=width,
-                    height=height,
-                    generator=generator,
-                    num_images_per_prompt=payload.image_count,
-                )
-            except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
-                error_str = str(e).lower()
-                is_memory_error = (
-                    "out of memory" in error_str
-                    or "cuda" in error_str
-                    or "cudnn" in error_str
-                    or "allocation" in error_str
-                )
-                
-                if is_memory_error:
-                    # En cas d'erreur mémoire, nettoyer agressivement
-                    _clear_gpu_memory()
-                    print(f"[WARN] ⚠️  Erreur mémoire GPU détectée, nettoyage agressif...")
-                    # Décharger tous les modèles en cache
-                    for cached_key in list(PIPELINE_CACHE.keys()):
-                        if cached_key != payload.model:
-                            _unload_pipeline(cached_key)
-                    _clear_gpu_memory()
-                    
-                    # Suggestions selon le type d'erreur
-                    suggestions = []
-                    if payload.image_count > 1:
-                        suggestions.append(f"réduire le nombre d'images ({payload.image_count} → 1)")
-                    if width * height > 1024 * 1024:
-                        suggestions.append(f"réduire la résolution ({width}x{height} → 1024x1024)")
-                    if payload.steps > 30:
-                        suggestions.append(f"réduire les steps ({payload.steps} → 30)")
-                    
-                    suggestion_text = ". ".join(suggestions) if suggestions else "réduire la résolution ou le nombre d'images"
-                    
-                    raise HTTPException(
-                        status_code=507,
-                        detail=(
-                            f"Mémoire GPU insuffisante (erreur cuDNN/PyTorch). "
-                            f"Suggestions: {suggestion_text}. "
-                            f"Erreur: {str(e)}"
-                        ),
-                    ) from e
-                else:
-                    # Autre erreur RuntimeError, la propager
-                    raise
-    finally:
-        _reset_pipeline_adapters(pipe)
-        # Nettoyer la mémoire après la génération
-        _clear_gpu_memory()
-    
-    duration = time.perf_counter() - start
-
-    images = []
-    for idx, image in enumerate(result.images):
-        image_id = f"{payload.model}-{seed + idx}-{int(time.time())}"
-        base64_data = pil_to_base64(image)
-        
-        # Sauvegarder l'image en fichier
-        _save_image_file(image_id, base64_data)
-        
-        # Sauvegarder les métadonnées
-        image_meta = {
-            "id": image_id,
-            "seed": seed + idx,
-            "model": payload.model,
-            "sampler": payload.sampler,
-            "steps": payload.steps,
-            "cfg_scale": payload.cfg_scale,
-            "resolution": f"{width}x{height}",
-            "prompt": payload.prompt,
-            "negative_prompt": payload.negative_prompt or "",
-            "clip_skip": payload.clip_skip,
-            "loras": [
-                {"key": lora.key, "label": lora.label, "weight": lora.weight, "type": lora.type}
-                for lora in applied_loras_meta
-            ] if applied_loras_meta else [],
-            "timestamp": datetime.now().isoformat(),
-            "file_path": f"images/{image_id}.png",
-        }
-        
-        # Ajouter aux métadonnées stockées
-        stored_images = _load_storage_json(STORAGE_IMAGES_JSON)
-        stored_images.append(image_meta)
-        # Garder seulement les 1000 dernières images
-        stored_images = stored_images[-1000:]
-        _save_storage_json(STORAGE_IMAGES_JSON, stored_images)
-        
-        images.append(
-            GeneratedImage(
-                id=image_id,
-                seed=seed + idx,
-                base64=base64_data,
-                model=payload.model,
-                sampler=payload.sampler,
-                steps=payload.steps,
-                cfg_scale=payload.cfg_scale,
-                resolution=f"{width}x{height}",
-                prompt=payload.prompt,
-                negative_prompt=payload.negative_prompt or "",
-                clip_skip=payload.clip_skip,
-                loras=applied_loras_meta,
-            )
-        )
-
-    if images:
-        history_entry = {
-            "id": str(uuid.uuid4()),
-            "prompt": payload.prompt,
-            "negative_prompt": payload.negative_prompt or "",
-            "model": payload.model,
-            "timestamp": datetime.now().isoformat(),
-            "thumbnail_id": images[0].id,
-            "settings": {
-                "sampler": payload.sampler,
-                "steps": payload.steps,
-                "cfg_scale": payload.cfg_scale,
-                "clip_skip": payload.clip_skip,
-                "resolution": f"{width}x{height}",
-                "seed": seed,
-                "use_aspect_ratio": bool(payload.width and payload.height),
-                "aspect_ratio": payload.resolution if not (payload.width and payload.height) else None,
-                "custom_width": width,
-                "custom_height": height,
-                "loras": [
-                    {"key": lora.key, "weight": lora.weight}
-                    for lora in payload.additional_loras
-                ],
-            },
-        }
-        _append_history_entry(history_entry)
-
-    return GenerateResponse(
-        images=images,
-        model=payload.model,
-        sampler=payload.sampler,
-        steps=payload.steps,
-        cfg_scale=payload.cfg_scale,
-        resolution=f"{width}x{height}",
-        duration_seconds=duration,
-    )
-
-
-@app.post("/generate-video", response_model=GenerateVideoResponse)
-def generate_video(payload: GenerateVideoRequest):
-    """Génère une petite vidéo à partir d'une image de départ + texte."""
-    pipe = get_video_pipeline()
-    
-    # Résolution fallback (au cas où l'image initiale manque, mais init est requis)
-    width, height = RESOLUTIONS[payload.resolution]
-    max_video_size = 384
-
-    # Seed
-    seed = payload.seed if payload.seed >= 0 else random.randint(0, 2**32 - 1)
-    generator = torch.Generator(device=DEVICE).manual_seed(seed)
-
-    # Image de départ obligatoire pour le moment
-    if not payload.init_image_base64:
-        raise HTTPException(
-            status_code=400,
-            detail="init_image_base64 est requis pour la vidéo pour l'instant.",
-        )
-
-    try:
-        img_bytes = base64.b64decode(payload.init_image_base64)
-        init_image = Image.open(BytesIO(img_bytes)).convert("RGB")
-        target_w, target_h = init_image.size
-        max_dim = max(target_w, target_h)
-        if max_dim > max_video_size:
-            scale = max_video_size / max_dim
-            target_w = int(target_w * scale)
-            target_h = int(target_h * scale)
-        # Arrondit aux multiples de 64 pour SVD, minimum 64
-        target_w = max(64, (target_w // 64) * 64)
-        target_h = max(64, (target_h // 64) * 64)
-        width, height = target_w, target_h
-        init_image = init_image.resize((width, height))
-    except Exception as err:  # pylint: disable=broad-except
-        raise HTTPException(status_code=400, detail=f"Image invalide: {err}") from err
-
-    start = time.perf_counter()
-    try:
-        with torch.inference_mode():
-            result = pipe(
-                image=init_image,
-                num_frames=payload.num_frames,
-                generator=generator,
-                decode_chunk_size=1,  # Décode frame par frame pour économiser VRAM
-            )
+        _ensure_model_enabled(payload.model)
     except RuntimeError as err:
-        if "out of memory" in str(err).lower() or "CUDA" in str(err):
-            raise HTTPException(
-                status_code=507,
-                detail=(
-                    "VRAM insuffisante (OOM). Réduisez num_frames (8 max), "
-                    "résolution (384x384 max), ou fermez d'autres applications GPU."
-                ),
-            ) from err
-        raise HTTPException(status_code=500, detail=f"Erreur génération vidéo: {err}") from err
-    duration = time.perf_counter() - start
+        raise HTTPException(status_code=400, detail=str(err)) from err
 
-    frames = result.frames[0]
-
-    # Encodage en mp4 via fichier temporaire (FFMPEG ne supporte pas BytesIO directement)
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
-        tmp_path = tmp_file.name
-
-    try:
-        writer = imageio.get_writer(tmp_path, format="ffmpeg", fps=payload.fps, codec="libx264", pixelformat="yuv420p")
-        for frame in frames:
-            # Convertir PIL Image en numpy array (RGB uint8)
-            if hasattr(frame, "convert"):  # C'est une PIL Image
-                frame_array = np.array(frame.convert("RGB"))
-            else:
-                frame_array = np.array(frame)
-            writer.append_data(frame_array)
-        writer.close()
-
-        # Lire le fichier temporaire et l'encoder en base64
-        with open(tmp_path, "rb") as f:
-            mp4_bytes = f.read()
-        mp4_b64 = base64.b64encode(mp4_bytes).decode("utf-8")
-        
-        # Sauvegarder la vidéo
-        video_id = f"video-{seed}-{int(time.time())}"
-        _save_video_file(video_id, mp4_b64)
-        
-        # Sauvegarder les métadonnées
-        video_meta = {
-            "id": video_id,
-            "seed": seed,
-            "num_frames": payload.num_frames,
-            "fps": payload.fps,
-            "prompt": payload.prompt,
-            "negative_prompt": payload.negative_prompt or "",
-            "timestamp": datetime.now().isoformat(),
-            "file_path": f"videos/{video_id}.mp4",
-            "duration_seconds": duration,
-        }
-        
-        stored_videos = _load_storage_json(STORAGE_VIDEOS_JSON)
-        stored_videos.append(video_meta)
-        stored_videos = stored_videos[-500:]  # Garder les 500 dernières vidéos
-        _save_storage_json(STORAGE_VIDEOS_JSON, stored_videos)
-    finally:
-        # Nettoyer le fichier temporaire
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-
-    return GenerateVideoResponse(
-        video=GeneratedVideo(mp4_base64=mp4_b64, id=video_id),
-        duration_seconds=duration,
+    job = job_manager.create_job(
+        "image",
+        payload.dict(),
+        metadata={"prompt_preview": payload.prompt[:120]},
+        total_steps=max(payload.steps, 1),
     )
+    return {"job_id": job["id"], "status": job["status"], "type": job["type"]}
+
+
+@app.post("/generate-video")
+def generate_video(payload: GenerateVideoRequest):
+    if not payload.init_image_base64:
+        if payload.mode == "img2vid":
+            raise HTTPException(
+                status_code=400,
+                detail="init_image_base64 est requis pour le mode image→vidéo.",
+            )
+
+    prep_steps = 0
+    if payload.mode == "text2vid":
+        prep_steps = payload.image_settings.steps if payload.image_settings else 30
+
+    job = job_manager.create_job(
+        "video",
+        payload.dict(),
+        metadata={"prompt_preview": payload.prompt[:120]},
+        total_steps=payload.num_frames + prep_steps,
+    )
+    return {"job_id": job["id"], "status": job["status"], "type": job["type"]}
+
+
+@app.get("/jobs")
+def list_jobs():
+    return {"jobs": job_manager.list_jobs()}
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str):
+    job = job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job introuvable.")
+    return job
+
+
+@app.post("/jobs/{job_id}/pause")
+def pause_job(job_id: str):
+    if not job_manager.request_pause(job_id):
+        raise HTTPException(status_code=400, detail="Impossible de mettre le job en pause.")
+    return {"status": "paused", "job_id": job_id}
+
+
+@app.post("/jobs/{job_id}/resume")
+def resume_job(job_id: str):
+    if not job_manager.resume_job(job_id, prioritize=False):
+        raise HTTPException(status_code=400, detail="Impossible de reprendre ce job.")
+    return {"status": "pending", "job_id": job_id}
+
+
+@app.post("/jobs/{job_id}/start")
+def start_job(job_id: str):
+    if not job_manager.resume_job(job_id, prioritize=True):
+        raise HTTPException(status_code=400, detail="Impossible de démarrer ce job.")
+    return {"status": "pending", "job_id": job_id, "priority": "high"}
+
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    if not job_manager.cancel_job(job_id):
+        raise HTTPException(status_code=400, detail="Impossible d'annuler ce job.")
+    return {"status": "cancelled", "job_id": job_id}
+
+
+@app.delete("/jobs/{job_id}")
+def delete_job(job_id: str):
+    if not job_manager.delete_job(job_id):
+        raise HTTPException(status_code=400, detail="Impossible de supprimer ce job.")
+    return {"status": "deleted", "job_id": job_id}
+
+
+@app.post("/jobs/resume-all")
+def resume_all_jobs():
+    resumed = 0
+    for job in job_manager.list_jobs():
+        if job["status"] in ("paused", "failed"):
+            if job_manager.resume_job(job["id"], prioritize=False):
+                resumed += 1
+    return {"resumed": resumed}
+
+
+@app.post("/jobs/clear-completed")
+def clear_completed_jobs():
+    removed = job_manager.clear_completed()
+    return {"removed": removed}
 
 
 @app.get("/storage/images")

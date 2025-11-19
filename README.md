@@ -102,3 +102,21 @@ npm run dev
 
 Depuis `backend/`, utilisez `python download_models.py --all` pour récupérer les poids listés dans le registre (Hugging Face Hub). Le backend tente aussi le téléchargement à la volée si un fichier manque.
 
+## Tests
+
+### Backend
+
+```powershell
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+### Frontend
+
+```powershell
+cd frontend
+npm install
+npm run test:unit
+```
+

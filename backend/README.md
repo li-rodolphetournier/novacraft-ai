@@ -67,10 +67,73 @@ python download_models.py --all
 
 Au runtime, `main.py` essaie aussi de télécharger le fichier manquant avant de lever une erreur.
 
+## File de jobs et reprise automatique
+
+Les générateurs fonctionnent maintenant via une file persistante :
+
+- `POST /generate` : crée un job d'image (retourne `job_id`)
+- `POST /generate-video` : crée un job vidéo
+- `GET /jobs` / `GET /jobs/{id}` : suivent la progression (statut, frames/images, résultat)
+- `POST /jobs/{id}/pause` / `resume` / `start` : pause ou reprise (le bouton *start* force la priorité)
+- `POST /jobs/{id}/cancel` : annule un job en file ou en cours
+- `DELETE /jobs/{id}` : supprime un job (pending, terminé, annulé, etc.) de la file
+- `POST /jobs/resume-all` : relance tous les jobs interrompus après un crash/veille
+- `POST /jobs/clear-completed` : nettoie les jobs terminés/annulés
+
+### Génération vidéo : image → vidéo ou texte → vidéo
+
+`POST /generate-video` prend désormais un champ `mode` :
+
+- `img2vid` (par défaut) : vous fournissez `init_image_base64`.
+- `text2vid` : le backend génère une image de référence à partir de vos réglages (`image_settings`) avant de lancer Stable Video Diffusion. Idéal pour partir d’un simple prompt.
+
+Exemple en mode texte :
+
+```json
+{
+  "prompt": "A cyberpunk skyline at night",
+  "negative_prompt": "low quality, blurry",
+  "mode": "text2vid",
+  "num_frames": 8,
+  "fps": 6,
+  "resolution": "512x512",
+  "seed": -1,
+  "image_settings": {
+    "model": "sdxl",
+    "steps": 30,
+    "cfg_scale": 7,
+    "sampler": "euler",
+    "clip_skip": 2,
+    "resolution": "1024x1024",
+    "additional_loras": []
+  }
+}
+```
+
+Le job calcule d’abord l’image (steps configurables), puis enchaîne la conversion en vidéo tout en conservant la progression dans la file.
+
 ## Lancer le serveur
 
 ```powershell
 uvicorn main:app --reload --port 8000
+```
+
+## Tests
+
+### Backend
+
+```powershell
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+### Frontend
+
+```powershell
+cd frontend
+npm install
+npm run test:unit
 ```
 
 ## Format de la requête
@@ -89,5 +152,15 @@ uvicorn main:app --reload --port 8000
 }
 ```
 
-La réponse contient les images en base64, prêtes à être consommées par le frontend Next.js.
+La requête crée désormais un **job**. La réponse ressemble à :
+
+```json
+{
+  "job_id": "job-1a2b3c4d",
+  "status": "pending",
+  "type": "image"
+}
+```
+
+Utilisez ensuite `GET /jobs/{job_id}` pour récupérer l'avancement et les images une fois le job terminé.
 
