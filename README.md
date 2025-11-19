@@ -1,4 +1,4 @@
-git stash# Générateur IA d’Images (Next.js + FastAPI)
+# NovaCraft AI - Générateur IA d'Images et Vidéos (Next.js + FastAPI)
 
 Projet local complet suivant le cahier des charges :
 

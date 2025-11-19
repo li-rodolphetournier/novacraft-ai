@@ -12,10 +12,10 @@ export function GeneratorHeader({ mode, onModeChange, showNSFW, onToggleNSFW }: 
     <header className="rounded-3xl border border-white/10 bg-gradient-to-r from-slate-900/80 to-slate-900/40 p-6 shadow-2xl">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-indigo-300">Stable Diffusion Local</p>
-          <h1 className="mt-2 text-3xl font-semibold text-white">Atelier SDXL / SD1.5</h1>
+          <p className="text-xs uppercase tracking-[0.3em] text-indigo-300">NovaCraft AI</p>
+          <h1 className="mt-2 text-3xl font-semibold text-white">Génération IA Locale</h1>
           <p className="mt-2 text-sm text-slate-300">
-            Prompt + paramètres essentiels, inspirés de CivitAI et ComfyUI, fonctionnement 100% offline.
+            Prompt + paramètres essentiels, fonctionnement 100% offline.
           </p>
         </div>
         <div className="flex items-center gap-4 text-xs">

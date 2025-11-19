@@ -968,7 +968,7 @@ def _apply_request_loras(
     return applied
 
 
-app = FastAPI(title="Local Stable Diffusion Bridge", version="0.1.0")
+app = FastAPI(title="NovaCraft AI Backend", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

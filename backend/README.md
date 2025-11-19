@@ -1,4 +1,4 @@
-# Backend – FastAPI + Diffusers
+# NovaCraft AI Backend – FastAPI + Diffusers
 
 Ce serveur expose la route `POST /generate` pour piloter Stable Diffusion (SD1.5 ou SDXL) en local. Il s'appuie sur `diffusers` et charge les poids fournis par l'utilisateur depuis CivitiAI ou HuggingFace.
 
