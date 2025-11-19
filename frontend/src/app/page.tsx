@@ -15,6 +15,7 @@ import {
   Resolution,
   Sampler,
   SelectedLora,
+  VideoMode,
 } from "@/types/generator";
 import { HistorySidebar } from "@/components/generator/HistorySidebar";
 import { GeneratorHeader } from "@/components/generator/GeneratorHeader";
@@ -62,6 +63,7 @@ export default function Home() {
   const [numFrames, setNumFrames] = useState(8);
   const [fps, setFps] = useState(6);
   const [videoDuration, setVideoDuration] = useState(1.33); // 8 frames / 6 fps ≈ 1.33s
+  const [videoMode, setVideoMode] = useState<VideoMode>("img2vid");
   const [availableLoras, setAvailableLoras] = useState<LoraOption[]>([]);
   const [selectedLoras, setSelectedLoras] = useState<SelectedLora[]>([]);
   const [showNSFW, setShowNSFW] = useState(false);
@@ -578,6 +580,11 @@ export default function Home() {
     [models, showNSFW],
   );
 
+  const selectedModelLabel = useMemo(() => {
+    const current = models.find((item) => item.value === model);
+    return current?.label ?? "modèle sélectionné";
+  }, [models, model]);
+
   const galleryModels = useMemo(
     () => models.map(({ label, value }) => ({ label, value })),
     [models],
@@ -608,8 +615,8 @@ export default function Home() {
       setError("Ajoutez un prompt pour lancer la génération.");
       return;
     }
-    if (mode === "video" && !initImageBase64) {
-      setError("Veuillez fournir une image de départ pour la vidéo.");
+    if (mode === "video" && videoMode === "img2vid" && !initImageBase64) {
+      setError("Veuillez fournir une image de départ ou basculer en mode Texte → Vidéo.");
       return;
     }
     setIsGenerating(true);
@@ -617,6 +624,8 @@ export default function Home() {
 
     try {
       const endpoint = mode === "image" ? "generate" : "generate-video";
+      const baseResolution = useAspectRatio ? `${customWidth}x${customHeight}` : resolution;
+      const numericSeed = Number(seed) || -1;
       const payload =
         mode === "image"
           ? {
@@ -625,8 +634,8 @@ export default function Home() {
               sampler,
               steps,
               cfg_scale: cfgScale,
-              resolution: useAspectRatio ? `${customWidth}x${customHeight}` : resolution,
-              seed: Number(seed) || -1,
+              resolution: baseResolution,
+              seed: numericSeed,
               clip_skip: clipSkip,
               image_count: imageCount,
               model,
@@ -638,9 +647,27 @@ export default function Home() {
               negative_prompt: negativePrompt,
               num_frames: numFrames,
               fps,
-              resolution,
-              seed: Number(seed) || -1,
-              init_image_base64: initImageBase64,
+              resolution: baseResolution,
+              seed: numericSeed,
+              mode: videoMode,
+              init_image_base64: videoMode === "img2vid" ? initImageBase64 : null,
+              image_settings:
+                videoMode === "text2vid"
+                  ? {
+                      prompt,
+                      negative_prompt: negativePrompt,
+                      sampler,
+                      steps,
+                      cfg_scale: cfgScale,
+                      resolution: baseResolution,
+                      seed: numericSeed,
+                      clip_skip: clipSkip,
+                      image_count: 1,
+                      model,
+                      ...(useAspectRatio && { width: customWidth, height: customHeight }),
+                      additional_loras: selectedLoras,
+                    }
+                  : undefined,
             };
 
       const response = await fetch(`${apiBase}/${endpoint}`, {
@@ -923,6 +950,13 @@ export default function Home() {
     });
   };
 
+  const handleVideoModeChange = useCallback((value: VideoMode) => {
+    setVideoMode(value);
+    if (value === "text2vid") {
+      setInitImageBase64(null);
+    }
+  }, []);
+
   const handleUseAspectRatioChange = (enabled: boolean) => {
     setUseAspectRatio(enabled);
     if (enabled) {
@@ -1045,6 +1079,9 @@ export default function Home() {
               onVideoDurationChange={handleVideoDurationChange}
               onFpsChange={handleFpsChange}
               onNumFramesChange={handleNumFramesChange}
+              videoMode={videoMode}
+              onVideoModeChange={handleVideoModeChange}
+              selectedModelLabel={selectedModelLabel}
               onInitImageUpload={handleInitImageUpload}
               onChatInputChange={setChatInput}
               onSendMessage={handleSendMessage}

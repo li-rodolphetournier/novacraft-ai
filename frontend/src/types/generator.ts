@@ -25,6 +25,7 @@ export type ModelKey =
   | "ishtars-gate-nsfw-sfw";
 
 export type Mode = "image" | "video" | "chat";
+export type VideoMode = "img2vid" | "text2vid";
 
 export type SelectedLora = {
   key: string;

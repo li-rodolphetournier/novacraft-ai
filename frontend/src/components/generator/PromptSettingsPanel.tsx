@@ -3,6 +3,7 @@ import type {
   PromptPreset,
   Resolution,
   Sampler,
+  VideoMode,
 } from "@/types/generator";
 import type { AspectRatioOption } from "@/config/generator";
 import { ChangeEvent } from "react";
@@ -46,6 +47,8 @@ type PromptSettingsPanelProps = {
   onVideoDurationChange: (value: number) => void;
   onFpsChange: (value: number) => void;
   onNumFramesChange: (value: number) => void;
+  videoMode: VideoMode;
+  onVideoModeChange: (mode: VideoMode) => void;
   onInitImageUpload: (file: File | null) => Promise<void> | void;
   onChatInputChange: (value: string) => void;
   onSendMessage: () => void;
@@ -54,6 +57,7 @@ type PromptSettingsPanelProps = {
   onSavePreset: () => void;
   activePresetId: string | null;
   customPresetIds: Set<string>;
+  selectedModelLabel: string;
 };
 
 export function PromptSettingsPanel({
@@ -95,6 +99,8 @@ export function PromptSettingsPanel({
   onVideoDurationChange,
   onFpsChange,
   onNumFramesChange,
+  videoMode,
+  onVideoModeChange,
   onInitImageUpload,
   onChatInputChange,
   onSendMessage,
@@ -103,6 +109,7 @@ export function PromptSettingsPanel({
   onSavePreset,
   activePresetId,
   customPresetIds,
+  selectedModelLabel,
 }: PromptSettingsPanelProps) {
   const handleNumericChange =
     (callback: (value: number) => void) =>
@@ -321,20 +328,55 @@ export function PromptSettingsPanel({
           {mode === "video" && (
             <>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  Image de départ (PNG/JPEG)
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Mode vidéo</p>
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  {[
+                    { value: "img2vid", label: "Image → Vidéo" },
+                    { value: "text2vid", label: "Texte → Vidéo" },
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => onVideoModeChange(option.value as VideoMode)}
+                      className={`rounded-xl border px-3 py-1.5 text-[11px] font-semibold transition ${
+                        videoMode === option.value
+                          ? "border-indigo-400 bg-indigo-500/20 text-white"
+                          : "border-white/10 bg-slate-900/60 text-slate-300 hover:border-white/30"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  {videoMode === "img2vid"
+                    ? "Utilisez votre propre image comme référence."
+                    : `L'image de départ sera générée via ${selectedModelLabel}.`}
                 </p>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="mt-1.5 text-[10px] text-slate-300"
-                  onChange={async (event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    await onInitImageUpload(file);
-                  }}
-                />
-                <p className="mt-1 text-[10px] text-slate-500">Obligatoire pour la vidéo.</p>
               </div>
+
+              {videoMode === "img2vid" ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Image de départ (PNG/JPEG)
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="mt-1.5 text-[10px] text-slate-300"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      await onInitImageUpload(file);
+                    }}
+                  />
+                  <p className="mt-1 text-[10px] text-slate-500">Obligatoire en mode Image → Vidéo.</p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3 text-[11px] text-slate-300">
+                  L'image de référence sera générée automatiquement en utilisant vos réglages (modèle, steps, LoRA…).
+                  Idéal pour lancer une vidéo directement depuis un prompt texte.
+                </div>
+              )}
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
