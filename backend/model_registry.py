@@ -50,17 +50,6 @@ MODEL_CONFIG: Dict[ModelKey, Dict[str, Any]] = {
         "path": os.getenv("MODEL_SDXL", "models/sdxlTurbo_fullVersion.safetensors"),
         "variant": "sdxl",
     },
-    "cyberrealistic-pony": {
-        # Base SDXL (ex: sdxlTurbo_fullVersion) + LoRA cyberrealisticPony_v141
-        "path": os.getenv(
-            "MODEL_CYBERREALISTIC_BASE", "models/sdxlTurbo_fullVersion.safetensors"
-        ),
-        "variant": "sdxl",
-        "lora_path": os.getenv(
-            "MODEL_CYBERREALISTIC_LORA", "models/cyberrealisticPony_v141.safetensors"
-        ),
-        "lora_label": "CyberRealistic Pony v1.41",
-    },
     "tsunade-il": {
         # Base SDXL (par ex. waiIllustriousSDXL) + LoRA Tsunade_iL
         "path": os.getenv(
@@ -72,62 +61,9 @@ MODEL_CONFIG: Dict[ModelKey, Dict[str, Any]] = {
         ),
         "lora_label": "Tsunade iL",
     },
-    "wai-illustrious-sdxl": {
-        "path": os.getenv(
-            "MODEL_WAI_ILLUSTRIOUS_SDXL", "models/waiIllustriousSDXL_v140.safetensors"
-        ),
-        "variant": "sdxl",
-    },
-    "wan22-enhanced-nsfw-camera": {
-    # Base SDXL (par ex. ton sdxlTurbo_fullVersion) + LoRA wan22
-    "path": os.getenv(
-        "MODEL_WAN22_BASE", "models/sdxlTurbo_fullVersion.safetensors"
-    ),
-    "variant": "sdxl",
-    "lora_path": os.getenv(
-        "MODEL_WAN22_LORA",
-        "models/wan22EnhancedNSFWCameraPrompt_nsfwFASTMOVEFP8High.safetensors",
-        ),
-        "lora_label": "wan22 Enhanced NSFW Camera",
-    },
-    "hassaku-xl-illustrious-v32": {
-        "path": os.getenv(
-            "MODEL_HASSAKU_XL_ILLUSTRIOUS_V32",
-            "models/hassakuXLIllustrious_v32.safetensors",
-        ),
-        "variant": "sdxl",
-    },
-    "duchaiten-pony-xl": {
-        "path": os.getenv(
-            "MODEL_DUCHAITEN_PONY_XL", "models/pony-no-score_v4.0.safetensors"
-        ),
-        "variant": "sdxl",
-    },
     "lucentxl-pony": {
         "path": os.getenv(
             "MODEL_LUCENTXL_PONY", "models/lucentxlPonyByKlaabu_b20.safetensors"
-        ),
-        "variant": "sdxl",
-    },
-    "ponydiffusion-v6-xl": {
-        "path": os.getenv(
-            "MODEL_PONYDIFFUSION_V6_XL", "models/ponyDiffusionV6XL_v6StartWithThisOne.safetensors"
-        ),
-        "variant": "sdxl",
-    },
-    "ishtars-gate-nsfw-sfw": {
-        "path": os.getenv(
-            "MODEL_ISHTARS_GATE", "models/ishtarsGateNSFWSFW_v10.safetensors"
-        ),
-        "variant": "sdxl",
-    },
-    "sdxl-turbo": {
-        "path": os.getenv("MODEL_SDXL_TURBO", "models/sdxl_turbo_1.0.safetensors"),
-        "variant": "sdxl",
-    },
-    "diving-illustrious": {
-        "path": os.getenv(
-            "MODEL_DIVING_ILLUSTRIOUS", "models/divingIllustrious_nijiMutedColorReal.safetensors"
         ),
         "variant": "sdxl",
     },
@@ -143,36 +79,14 @@ MODEL_CONFIG: Dict[ModelKey, Dict[str, Any]] = {
         ),
         "variant": "sdxl",
     },
-    "realvis-xl": {
-        "path": os.getenv("MODEL_REALVIS_XL", "models/RealVisXL_V4.0.safetensors"),
-        "variant": "sdxl",
-    },
     "sd-1.5-base": {
         "path": os.getenv("MODEL_SD_1_5_BASE", "models/v1-5-pruned.safetensors"),
-        "variant": "sd15",
-    },
-    "chilloutmix": {
-        "path": os.getenv("MODEL_CHILLOUTMIX", "models/chilloutmix.safetensors"),
-        "variant": "sd15",
-    },
-    "deliberate": {
-        "path": os.getenv("MODEL_DELIBERATE", "models/deliberate_v2.safetensors"),
-        "variant": "sd15",
-    },
-    "realistic-vision": {
-        "path": os.getenv(
-            "MODEL_REALISTIC_VISION", "models/Realistic_Vision_V5.1-noVAE.safetensors"
-        ),
         "variant": "sd15",
     },
     "dreamshaper": {
         "path": os.getenv(
             "MODEL_DREAMSHAPER", "models/DreamShaper_8_pruned.safetensors"
         ),
-        "variant": "sd15",
-    },
-    "meinamik": {
-        "path": os.getenv("MODEL_MEINAMIK", "models/MeinaMix_v11.safetensors"),
         "variant": "sd15",
     },
 }
@@ -190,14 +104,6 @@ MODEL_SOURCES: Dict[ModelKey, Dict[str, str]] = {
         "repo_id": "Lykon/dreamshaper-8",
         "filename": "DreamShaper_8_pruned.safetensors",
     },
-    "meinamik": {
-        "repo_id": "Meina/MeinaMix_V11",
-        "filename": "MeinaMix_v11.safetensors",
-    },
-    "sdxl-turbo": {
-        "repo_id": "stabilityai/sdxl-turbo",
-        "filename": "sd_xl_turbo_1.0_fp16.safetensors",
-    },
     "dreamshaper-xl": {
         "repo_id": "Lykon/DreamShaper-XL",
         "filename": "DreamShaperXL_v2.0.safetensors",
@@ -206,21 +112,9 @@ MODEL_SOURCES: Dict[ModelKey, Dict[str, str]] = {
         "repo_id": "RunDiffusion/Juggernaut-XL-v9",
         "filename": "Juggernaut-XL-v9.safetensors",
     },
-    "realvis-xl": {
-        "repo_id": "SG161222/RealVisXL_V4.0",
-        "filename": "RealVisXL_V4.0.safetensors",
-    },
     "sd-1.5-base": {
         "repo_id": "runwayml/stable-diffusion-v1-5",
         "filename": "v1-5-pruned.safetensors",
-    },
-    "chilloutmix": {
-        "repo_id": "Lykon/chilloutmix",
-        "filename": "chilloutmix.safetensors",
-    },
-    "deliberate": {
-        "repo_id": "XpucT/Deliberate",
-        "filename": "deliberate_v2.safetensors",
     },
 }
 
@@ -246,27 +140,6 @@ LORA_LIBRARY: Dict[str, Dict[str, Any]] = {
         "path": os.getenv("LORA_G0TH1C_PXL", "models/lora/g0th1cPXL.safetensors"),
         "default_weight": 0.5,
         "description": "Style gothique optimisé PonyXL",
-        "nsfw": True,
-    },
-    "bs-pony-alpha": {
-        "label": "BS Pony Alpha 1.0",
-        "path": os.getenv("LORA_BS_PONY_ALPHA", "models/lora/BS- Pony_alpha1.0_rank4.safetensors"),
-        "default_weight": 0.6,
-        "description": "LoRA BS Pony alpha (rank4)",
-        "nsfw": True,
-    },
-    "ps-alpha": {
-        "label": "PS Alpha 1.0",
-        "path": os.getenv("LORA_PS_ALPHA", "models/lora/PS_alpha1.0_rank4.safetensors"),
-        "default_weight": 0.55,
-        "description": "LoRA PS alpha polyvalente (rank4)",
-        "nsfw": True,
-    },
-    "pts-alpha": {
-        "label": "PTS Alpha 1.0",
-        "path": os.getenv("LORA_PTS_ALPHA", "models/lora/PTS_alpha1.0_rank4.safetensors"),
-        "default_weight": 0.55,
-        "description": "LoRA PTS alpha (rank4)",
         "nsfw": True,
     },
     "wan22-i2v": {
