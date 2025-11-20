@@ -35,6 +35,9 @@ type PromptSettingsPanelProps = {
   isChatting: boolean;
   chatAttachmentPreview: string | null;
   chatAttachmentName: string | null;
+  imageInitPreview: string | null;
+  imageInitName: string | null;
+  imageInitStrength: number;
   promptPresets: PromptPreset[];
   samplers: { label: string; value: Sampler }[];
   resolutions: { label: string; value: Resolution; hint: string }[];
@@ -61,6 +64,9 @@ type PromptSettingsPanelProps = {
   onChatReset: () => void;
   onChatImageUpload: (file: File | null) => Promise<void> | void;
   onChatAttachmentClear: () => void;
+  onImageInitUpload: (file: File | null) => Promise<void> | void;
+  onImageInitClear: () => void;
+  onImageInitStrengthChange: (value: number) => void;
   onAddPreset: () => void;
   onSavePreset: () => void;
   onDeletePreset: (presetId: string) => void;
@@ -91,6 +97,9 @@ export function PromptSettingsPanel({
   isChatting,
   chatAttachmentPreview,
   chatAttachmentName,
+  imageInitPreview,
+  imageInitName,
+  imageInitStrength,
   apiBase,
   promptPresets,
   samplers,
@@ -118,6 +127,9 @@ export function PromptSettingsPanel({
   onChatReset,
   onChatImageUpload,
   onChatAttachmentClear,
+  onImageInitUpload,
+  onImageInitClear,
+  onImageInitStrengthChange,
   onAddPreset,
   onSavePreset,
   onDeletePreset,
@@ -224,6 +236,76 @@ export function PromptSettingsPanel({
       {(mode === "image" || mode === "video") && (
         <>
           {renderPromptControls()}
+
+          {mode === "image" && (
+            <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Image de base (img2img)
+                  </p>
+                  <p className="text-[10px] text-slate-500">Optionnel — mélange l'image avec le prompt.</p>
+                </div>
+                {imageInitPreview && (
+                  <button
+                    type="button"
+                    onClick={onImageInitClear}
+                    className="text-[10px] uppercase tracking-[0.2em] text-rose-200 transition hover:text-white"
+                  >
+                    Retirer
+                  </button>
+                )}
+              </div>
+
+              {imageInitPreview ? (
+                <div className="flex items-center gap-3">
+                  <img
+                    src={imageInitPreview}
+                    alt="Image de base"
+                    className="h-24 w-24 rounded-xl border border-white/10 object-cover"
+                  />
+                  <div className="text-xs text-slate-300">
+                    <p className="font-semibold">{imageInitName ?? "image.png"}</p>
+                    <p className="text-[10px] text-slate-500">L'image sera utilisée comme point de départ.</p>
+                  </div>
+                </div>
+              ) : (
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-slate-800/60 px-3 py-2 text-[11px] text-slate-200 transition hover:border-white/30">
+                  Importer une image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (event) => {
+                      const file = event.currentTarget.files?.[0] ?? null;
+                      await onImageInitUpload(file);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              )}
+
+              <div>
+                <label className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Force (denoise)</label>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={0.9}
+                  step={0.05}
+                  value={imageInitStrength}
+                  onChange={(event) => onImageInitStrengthChange(Number(event.target.value))}
+                  className="mt-2 w-full accent-indigo-400"
+                />
+                <p className="mt-1 text-[10px] text-slate-500">
+                  {imageInitStrength <= 0.35
+                    ? "Très fidèle à l'image initiale."
+                    : imageInitStrength >= 0.7
+                      ? "Donne plus de liberté au prompt."
+                      : "Équilibre entre image et prompt."}
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-3 md:grid-cols-2">
             <div>

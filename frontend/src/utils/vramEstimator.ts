@@ -14,6 +14,7 @@ export type VramEstimateInput = {
   fps: number;
   activeLoras: number;
   vramLimitGb?: number;
+  hasImageInit?: boolean;
 };
 
 export type VramEstimate = {
@@ -64,6 +65,8 @@ export const estimateVramUsage = (input: VramEstimateInput): VramEstimate => {
       usageGb += 0.8; // image de référence supplémentaire
     }
     usageGb += (Math.max(input.fps, 1) / 6) * 0.25;
+  } else if (input.mode === "image" && input.hasImageInit) {
+    usageGb += 0.6; // overhead img2img
   }
 
   usageGb = Number(usageGb.toFixed(2));

@@ -64,7 +64,10 @@ export default function Home() {
   const [chatAttachment, setChatAttachment] = useState<string | null>(null);
   const [chatAttachmentName, setChatAttachmentName] = useState<string | null>(null);
   const [videos, setVideos] = useState<GeneratedVideo[]>([]);
-  const [initImageBase64, setInitImageBase64] = useState<string | null>(null);
+  const [initImageBase64, setInitImageBase64] = useState<string | null>(null); // vidéo
+  const [imageInitBase64, setImageInitBase64] = useState<string | null>(null); // image mode
+  const [imageInitName, setImageInitName] = useState<string | null>(null);
+  const [imageInitStrength, setImageInitStrength] = useState(0.5);
   const [numFrames, setNumFrames] = useState(8);
   const [fps, setFps] = useState(6);
   const [videoDuration, setVideoDuration] = useState(1.33); // 8 frames / 6 fps ≈ 1.33s
@@ -653,6 +656,7 @@ export default function Home() {
         numFrames,
         fps,
         activeLoras: selectedLoras.length,
+        hasImageInit: Boolean(imageInitBase64),
       });
     } catch {
       return null;
@@ -722,6 +726,8 @@ export default function Home() {
               model,
               ...(useAspectRatio && { width: customWidth, height: customHeight }),
               additional_loras: selectedLoras,
+              init_image_base64: imageInitBase64,
+              ...(imageInitBase64 ? { init_strength: imageInitStrength } : {}),
             }
           : {
               prompt,
@@ -1127,6 +1133,37 @@ export default function Home() {
     });
   };
 
+  const handleImageInitUpload = (file: File | null) => {
+    if (!file) {
+      setImageInitBase64(null);
+      setImageInitName(null);
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error("Veuillez choisir une image inférieure à 4 Mo.");
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result === "string") {
+          const base64 = result.includes(",") ? result.split(",")[1] ?? result : result;
+          setImageInitBase64(base64);
+          setImageInitName(file.name);
+        }
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleImageInitClear = () => {
+    setImageInitBase64(null);
+    setImageInitName(null);
+  };
+
   const handleChatImageUpload = (file: File | null) => {
     if (!file) {
       setChatAttachment(null);
@@ -1273,6 +1310,11 @@ export default function Home() {
               isChatting={isChatting}
               chatAttachmentPreview={chatAttachment}
               chatAttachmentName={chatAttachmentName}
+              imageInitPreview={
+                imageInitBase64 ? `data:image/png;base64,${imageInitBase64}` : null
+              }
+              imageInitName={imageInitName}
+              imageInitStrength={imageInitStrength}
               promptPresets={filteredPromptPresets}
               samplers={samplers}
               resolutions={resolutions}
@@ -1300,6 +1342,9 @@ export default function Home() {
               onChatReset={handleChatReset}
               onChatImageUpload={handleChatImageUpload}
               onChatAttachmentClear={handleChatAttachmentClear}
+              onImageInitUpload={handleImageInitUpload}
+              onImageInitClear={handleImageInitClear}
+              onImageInitStrengthChange={setImageInitStrength}
               onAddPreset={handleAddPreset}
               onSavePreset={handleSavePreset}
               onDeletePreset={handleDeletePreset}

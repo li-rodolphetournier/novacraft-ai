@@ -93,6 +93,10 @@ class GenerateRequest(BaseModel):
     width: int | None = Field(default=None, ge=256, le=2048, description="Custom width (overrides resolution)")
     height: int | None = Field(default=None, ge=256, le=2048, description="Custom height (overrides resolution)")
     additional_loras: list[LoRAInput] = Field(default_factory=list)
+    init_image_base64: str | None = Field(
+        default=None, description="Optional base image (img2img mode, base64 PNG)"
+    )
+    init_strength: float = Field(default=0.5, ge=0.05, le=0.95, description="Denoise strength for img2img")
 
 
 class GeneratedImage(BaseModel):
@@ -469,6 +473,23 @@ def run_image_generation_job(payload: GenerateRequest, job_id: str | None = None
     seed = payload.seed if payload.seed >= 0 else random.randint(0, 2**32 - 1)
     generator = torch.Generator(device=DEVICE).manual_seed(seed)
     total_steps = max(payload.steps, 1)
+    init_image = None
+
+    if payload.init_image_base64:
+        try:
+            img_bytes = base64.b64decode(payload.init_image_base64)
+            init_image = Image.open(BytesIO(img_bytes)).convert("RGB")
+            target_w, target_h = width, height
+            if payload.width is None and payload.height is None and not payload.resolution:
+                init_w, init_h = init_image.size
+                init_w = max(64, (init_w // 64) * 64)
+                init_h = max(64, (init_h // 64) * 64)
+                target_w, target_h = init_w, init_h
+            if init_image.size != (target_w, target_h):
+                init_image = init_image.resize((target_w, target_h))
+            width, height = init_image.size
+        except Exception as err:
+            raise RuntimeError(f"Image de base invalide: {err}") from err
 
     applied_loras_meta: list[AppliedLoRA] = []
     start = time.perf_counter()
@@ -506,18 +527,24 @@ def run_image_generation_job(payload: GenerateRequest, job_id: str | None = None
 
         with torch.inference_mode():
             try:
-                result = pipe(
-                    prompt=payload.prompt,
-                    negative_prompt=payload.negative_prompt or "",
-                    guidance_scale=payload.cfg_scale,
-                    num_inference_steps=payload.steps,
-                    width=width,
-                    height=height,
-                    generator=generator,
-                    num_images_per_prompt=payload.image_count,
-                    callback=diffusion_callback,
-                    callback_steps=1,
-                )
+                call_kwargs: Dict[str, Any] = {
+                    "prompt": payload.prompt,
+                    "negative_prompt": payload.negative_prompt or "",
+                    "guidance_scale": payload.cfg_scale,
+                    "num_inference_steps": payload.steps,
+                    "generator": generator,
+                    "num_images_per_prompt": payload.image_count,
+                    "callback": diffusion_callback,
+                    "callback_steps": 1,
+                }
+                if init_image is not None:
+                    call_kwargs["image"] = init_image
+                    call_kwargs["strength"] = payload.init_strength
+                else:
+                    call_kwargs["width"] = width
+                    call_kwargs["height"] = height
+
+                result = pipe(**call_kwargs)
             except (torch.cuda.OutOfMemoryError, RuntimeError) as err:
                 _clear_gpu_memory()
                 for cached_key in list(PIPELINE_CACHE.keys()):

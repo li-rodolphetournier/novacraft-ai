@@ -28,6 +28,7 @@ ModelKey = Literal[
     "lucentxl-pony",
     "ponydiffusion-v6-xl",
     "ishtars-gate-nsfw-sfw",
+    "diving-illustrious",
 ]
 
 MODEL_CONFIG: Dict[ModelKey, Dict[str, str]] = {
@@ -108,6 +109,12 @@ MODEL_CONFIG: Dict[ModelKey, Dict[str, str]] = {
     },
     "sdxl-turbo": {
         "path": os.getenv("MODEL_SDXL_TURBO", "models/sdxl_turbo_1.0.safetensors"),
+        "variant": "sdxl",
+    },
+    "diving-illustrious": {
+        "path": os.getenv(
+            "MODEL_DIVING_ILLUSTRIOUS", "models/divingIllustrious_nijiMutedColorReal.safetensors"
+        ),
         "variant": "sdxl",
     },
     "dreamshaper-xl": {
@@ -246,6 +253,45 @@ LORA_LIBRARY: Dict[str, Dict[str, str | float]] = {
         "path": os.getenv("LORA_PTS_ALPHA", "models/lora/PTS_alpha1.0_rank4.safetensors"),
         "default_weight": 0.55,
         "description": "LoRA PTS alpha (rank4)",
+        "nsfw": True,
+    },
+    "23high-noise-cumshot": {
+        "label": "23High Noise Cumshot Aesthetics",
+        "path": os.getenv(
+            "LORA_23HIGH_NOISE", "models/lora/23High noise-Cumshot Aesthetics.safetensors"
+        ),
+        "default_weight": 0.5,
+        "description": "Renforce le grain/particules façon shooting pop.",
+        "nsfw": True,
+    },
+    "wan22-i2v": {
+        "label": "Wan 2.2 I2V A14B",
+        "path": os.getenv(
+            "LORA_WAN22_I2V",
+            "models/lora/Wan_2_2_I2V_A14B_HIGH_lightx2v_4step_lora_v1030_rank_64_bf16.safetensors",
+        ),
+        "default_weight": 0.4,
+        "description": "Optimisée pour les conversions image→vidéo rapides.",
+        "nsfw": False,
+    },
+    "morii-gothic": {
+        "label": "MoriiMee Gothic Pony",
+        "path": os.getenv(
+            "LORA_MORII_GOTHIC",
+            "models/lora/MoriiMee_Gothic_Niji_Style__Pony_LoRA_V1_Redux.safetensors",
+        ),
+        "default_weight": 0.45,
+        "description": "Style gothique kawaï (MoriiMee).",
+        "nsfw": False,
+    },
+    "incase-style-alt": {
+        "label": "Incase Style PonyXL (alt)",
+        "path": os.getenv(
+            "LORA_INCASE_STYLE_ALT",
+            "models/lora/incase_style_v3-1_ponyxl_ilff.safetensors",
+        ),
+        "default_weight": 0.5,
+        "description": "Variante Incase stylisée (style v3.1).",
         "nsfw": True,
     },
 }
