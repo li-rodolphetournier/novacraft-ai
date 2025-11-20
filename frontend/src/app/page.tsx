@@ -24,6 +24,7 @@ import { PromptSettingsPanel } from "@/components/generator/PromptSettingsPanel"
 import { ModelSettingsPanel } from "@/components/generator/ModelSettingsPanel";
 import { GallerySection } from "@/components/generator/GallerySection";
 import { JobQueuePanel } from "@/components/generator/JobQueuePanel";
+import { estimateVramUsage, type VramEstimate } from "@/utils/vramEstimator";
 import { Modal, PromptModal } from "@/components/common/Modal";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -56,9 +57,12 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [availableModels, setAvailableModels] = useState<Set<string>>(new Set(["sdxl"]));
   const [mode, setMode] = useState<Mode>("image");
-  const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  type ChatEntry = { role: "user" | "assistant"; content: string; images?: string[] };
+  const [chatMessages, setChatMessages] = useState<ChatEntry[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
+  const [chatAttachment, setChatAttachment] = useState<string | null>(null);
+  const [chatAttachmentName, setChatAttachmentName] = useState<string | null>(null);
   const [videos, setVideos] = useState<GeneratedVideo[]>([]);
   const [initImageBase64, setInitImageBase64] = useState<string | null>(null);
   const [numFrames, setNumFrames] = useState(8);
@@ -373,6 +377,28 @@ export default function Home() {
     [apiBase, refreshJobs],
   );
 
+  const handleClearCompleted = useCallback(
+    async () => {
+      try {
+        const response = await fetch(`${apiBase}/jobs/clear-completed`, { method: "POST" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.detail ?? "Impossible de nettoyer les jobs complétés.");
+        }
+        const removed = payload.removed ?? 0;
+        await refreshJobs();
+        if (removed > 0) {
+          toast.success(`${removed} job${removed > 1 ? "s" : ""} complété${removed > 1 ? "s" : ""} supprimé${removed > 1 ? "s" : ""}`);
+        } else {
+          toast.info("Aucun job complété à supprimer");
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Impossible de nettoyer les jobs complétés.");
+      }
+    },
+    [apiBase, refreshJobs],
+  );
+
   const cfgHint = useMemo(() => {
     if (cfgScale <= 7) return "5–7 → réaliste";
     if (cfgScale <= 11) return "7–11 → artistique";
@@ -598,6 +624,53 @@ export default function Home() {
     () => models.map(({ label, value }) => ({ label, value })),
     [models],
   );
+
+  const targetResolution = useMemo(() => {
+    if (useAspectRatio) {
+      return { width: customWidth, height: customHeight };
+    }
+    const parts = resolution.split("x").map((part) => Number(part.trim()));
+    const width = Number.isFinite(parts[0]) && parts[0] > 0 ? parts[0] : 512;
+    const height = Number.isFinite(parts[1]) && parts[1] > 0 ? parts[1] : 512;
+    return { width, height };
+  }, [useAspectRatio, customWidth, customHeight, resolution]);
+
+  const vramEstimate: VramEstimate | null = useMemo(() => {
+    if (mode === "chat") {
+      return null;
+    }
+    try {
+      return estimateVramUsage({
+        mode,
+        resolution,
+        useCustomResolution: useAspectRatio,
+        width: targetResolution.width,
+        height: targetResolution.height,
+        steps,
+        imageCount,
+        model,
+        videoMode,
+        numFrames,
+        fps,
+        activeLoras: selectedLoras.length,
+      });
+    } catch {
+      return null;
+    }
+  }, [
+    mode,
+    resolution,
+    useAspectRatio,
+    targetResolution.width,
+    targetResolution.height,
+    steps,
+    imageCount,
+    model,
+    videoMode,
+    numFrames,
+    fps,
+    selectedLoras.length,
+  ]);
 
   useEffect(() => {
     if (!showNSFW) {
@@ -973,20 +1046,29 @@ export default function Home() {
   const handleSendMessage = async () => {
     if (!chatInput.trim() || isChatting) return;
 
-    const userMessage = chatInput.trim();
+    const userEntry: ChatEntry = {
+      role: "user",
+      content: chatInput.trim(),
+      ...(chatAttachment ? { images: [chatAttachment] } : {}),
+    };
+    const updatedMessages = [...chatMessages, userEntry];
+
     setChatInput("");
-    setChatMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    setChatMessages(updatedMessages);
     setIsChatting(true);
+    setChatAttachment(null);
+    setChatAttachmentName(null);
 
     try {
       const response = await fetch(`${apiBase}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [
-            ...chatMessages,
-            { role: "user" as const, content: userMessage },
-          ],
+          messages: updatedMessages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+            ...(msg.images ? { images: msg.images } : {}),
+          })),
         }),
       });
 
@@ -997,7 +1079,11 @@ export default function Home() {
       const data = await response.json();
       setChatMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.message.content },
+        {
+          role: "assistant",
+          content: data.message.content,
+          ...(data.message.images ? { images: data.message.images } : {}),
+        },
       ]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur de chat");
@@ -1016,6 +1102,8 @@ export default function Home() {
   const handleChatReset = () => {
     setChatMessages([]);
     setChatInput("");
+    setChatAttachment(null);
+    setChatAttachmentName(null);
   };
 
   const handleInitImageUpload = (file: File | null) => {
@@ -1037,6 +1125,39 @@ export default function Home() {
       reader.onerror = () => resolve();
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleChatImageUpload = (file: File | null) => {
+    if (!file) {
+      setChatAttachment(null);
+      setChatAttachmentName(null);
+      return;
+    }
+
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error("Veuillez choisir une image inférieure à 4 Mo.");
+      return;
+    }
+
+    return new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result === "string") {
+          const base64 = result.includes(",") ? result.split(",")[1] ?? result : result;
+          setChatAttachment(base64);
+          setChatAttachmentName(file.name);
+        }
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleChatAttachmentClear = () => {
+    setChatAttachment(null);
+    setChatAttachmentName(null);
   };
 
   const handleVideoModeChange = useCallback((value: VideoMode) => {
@@ -1150,6 +1271,8 @@ export default function Home() {
               chatMessages={chatMessages}
               chatInput={chatInput}
               isChatting={isChatting}
+              chatAttachmentPreview={chatAttachment}
+              chatAttachmentName={chatAttachmentName}
               promptPresets={filteredPromptPresets}
               samplers={samplers}
               resolutions={resolutions}
@@ -1175,6 +1298,8 @@ export default function Home() {
               onChatInputChange={setChatInput}
               onSendMessage={handleSendMessage}
               onChatReset={handleChatReset}
+              onChatImageUpload={handleChatImageUpload}
+              onChatAttachmentClear={handleChatAttachmentClear}
               onAddPreset={handleAddPreset}
               onSavePreset={handleSavePreset}
               onDeletePreset={handleDeletePreset}
@@ -1195,6 +1320,7 @@ export default function Home() {
               jobStatusText={displayJobStatusText}
               jobProgressPercent={displayJobProgressPercent}
               imageCount={imageCount}
+            vramEstimate={vramEstimate}
               onModelChange={setModel}
               onSeedChange={setSeed}
               onClipSkipChange={setClipSkip}
@@ -1217,6 +1343,7 @@ export default function Home() {
           onStart={handleStartJob}
           onCancel={handleCancelJob}
           onDelete={handleDeleteJob}
+          onClearCompleted={handleClearCompleted}
         />
 
           <GallerySection

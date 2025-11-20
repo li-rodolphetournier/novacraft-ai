@@ -15,6 +15,7 @@ type JobQueuePanelProps = {
   onStart: (jobId: string) => void;
   onCancel: (jobId: string) => void;
   onDelete: (jobId: string) => void;
+  onClearCompleted: () => void;
 };
 
 const statusLabels: Record<string, string> = {
@@ -51,6 +52,7 @@ export function JobQueuePanel({
   onStart,
   onCancel,
   onDelete,
+  onClearCompleted,
 }: JobQueuePanelProps) {
   return (
     <div className="mt-8 w-full rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl">
@@ -58,10 +60,22 @@ export function JobQueuePanel({
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">File de jobs</p>
           <p className="text-[11px] text-slate-500">
-            Lancez plusieurs jobs à la suite — l’ordre est respecté et chaque job est récupérable.
+            Lancez plusieurs jobs à la suite — l'ordre est respecté et chaque job est récupérable.
           </p>
         </div>
-        {jobsError && <p className="text-xs text-rose-300">{jobsError}</p>}
+        <div className="flex items-center gap-3">
+          {jobs.some((job) => job.status === "completed" || job.status === "cancelled" || job.status === "failed") && (
+            <button
+              type="button"
+              onClick={onClearCompleted}
+              className="rounded-lg border border-slate-400/40 bg-slate-700/20 px-3 py-1.5 text-[11px] text-slate-200 transition hover:bg-slate-700/40"
+              title="Supprimer tous les jobs complétés, annulés ou échoués"
+            >
+              Nettoyer
+            </button>
+          )}
+          {jobsError && <p className="text-xs text-rose-300">{jobsError}</p>}
+        </div>
       </div>
 
       {jobs.length === 0 ? (

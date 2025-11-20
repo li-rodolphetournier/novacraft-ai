@@ -30,9 +30,11 @@ type PromptSettingsPanelProps = {
   videoDuration: number;
   fps: number;
   numFrames: number;
-  chatMessages: Array<{ role: "user" | "assistant"; content: string }>;
+  chatMessages: Array<{ role: "user" | "assistant"; content: string; images?: string[] }>;
   chatInput: string;
   isChatting: boolean;
+  chatAttachmentPreview: string | null;
+  chatAttachmentName: string | null;
   promptPresets: PromptPreset[];
   samplers: { label: string; value: Sampler }[];
   resolutions: { label: string; value: Resolution; hint: string }[];
@@ -57,6 +59,8 @@ type PromptSettingsPanelProps = {
   onChatInputChange: (value: string) => void;
   onSendMessage: () => void;
   onChatReset: () => void;
+  onChatImageUpload: (file: File | null) => Promise<void> | void;
+  onChatAttachmentClear: () => void;
   onAddPreset: () => void;
   onSavePreset: () => void;
   onDeletePreset: (presetId: string) => void;
@@ -85,6 +89,8 @@ export function PromptSettingsPanel({
   chatMessages,
   chatInput,
   isChatting,
+  chatAttachmentPreview,
+  chatAttachmentName,
   apiBase,
   promptPresets,
   samplers,
@@ -110,6 +116,8 @@ export function PromptSettingsPanel({
   onChatInputChange,
   onSendMessage,
   onChatReset,
+  onChatImageUpload,
+  onChatAttachmentClear,
   onAddPreset,
   onSavePreset,
   onDeletePreset,
@@ -465,6 +473,21 @@ export function PromptSettingsPanel({
                   }`}
                 >
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  {msg.images && msg.images.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {msg.images.map((image, imageIdx) => {
+                        const previewSrc = image.startsWith("data:") ? image : `data:image/png;base64,${image}`;
+                        return (
+                          <img
+                            key={`${idx}-${imageIdx}`}
+                            src={previewSrc}
+                            alt="Image jointe"
+                            className="h-28 w-28 rounded-xl border border-white/10 object-cover"
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -474,6 +497,55 @@ export function PromptSettingsPanel({
                   <p className="text-sm text-slate-400">Réflexion...</p>
                 </div>
               </div>
+            )}
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Image jointe</p>
+                <p className="text-[10px] text-slate-500">Optionnel — l&apos;IA pourra analyser votre image.</p>
+              </div>
+              {chatAttachmentPreview && (
+                <button
+                  type="button"
+                  onClick={onChatAttachmentClear}
+                  className="text-[10px] uppercase tracking-[0.2em] text-rose-200 transition hover:text-white"
+                >
+                  Retirer
+                </button>
+              )}
+            </div>
+            {chatAttachmentPreview ? (
+              <div className="mt-3 flex items-center gap-3">
+                <img
+                  src={
+                    chatAttachmentPreview.startsWith("data:")
+                      ? chatAttachmentPreview
+                      : `data:image/png;base64,${chatAttachmentPreview}`
+                  }
+                  alt="Pièce jointe"
+                  className="h-24 w-24 rounded-xl border border-white/10 object-cover"
+                />
+                <div className="text-xs text-slate-300">
+                  <p className="font-semibold">{chatAttachmentName ?? "image.png"}</p>
+                  <p className="text-[10px] text-slate-500">L&apos;image sera envoyée au prochain message.</p>
+                </div>
+              </div>
+            ) : (
+              <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-slate-800/60 px-3 py-2 text-[11px] text-slate-200 transition hover:border-white/30">
+                Importer une image
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (event) => {
+                    const inputEl = event.target as HTMLInputElement;
+                    const file = inputEl.files?.[0] ?? null;
+                    await onChatImageUpload(file);
+                    inputEl.value = "";
+                  }}
+                />
+              </label>
             )}
           </div>
           <div className="flex gap-2">

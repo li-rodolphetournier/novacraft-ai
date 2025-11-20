@@ -4,6 +4,7 @@ import type {
   Mode,
   SelectedLora,
 } from "@/types/generator";
+import type { VramEstimate } from "@/utils/vramEstimator";
 
 type ModelDescriptor = {
   label: string;
@@ -35,6 +36,7 @@ type ModelSettingsPanelProps = {
   jobLabel?: string | null;
   jobStatusText?: string | null;
   jobProgressPercent?: number | null;
+  vramEstimate: VramEstimate | null;
 };
 
 export function ModelSettingsPanel({
@@ -58,7 +60,22 @@ export function ModelSettingsPanel({
   jobLabel,
   jobStatusText,
   jobProgressPercent,
+  vramEstimate,
 }: ModelSettingsPanelProps) {
+  const levelClasses = {
+    safe: {
+      bar: "from-emerald-400 to-green-500",
+      text: "text-emerald-200",
+    },
+    warning: {
+      bar: "from-amber-400 to-orange-400",
+      text: "text-amber-200",
+    },
+    danger: {
+      bar: "from-rose-500 to-red-600",
+      text: "text-rose-200",
+    },
+  } as const;
   return (
     <div className="w-full space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl">
       <div>
@@ -201,6 +218,24 @@ export function ModelSettingsPanel({
           >
             {isSubmitting ? "Création du job…" : mode === "video" ? "Programmer la vidéo" : "Programmer les images"}
           </button>
+
+          {vramEstimate && (
+            <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-xs">
+              <div className="flex items-center justify-between text-slate-300">
+                <span>VRAM estimée</span>
+                <span className="font-semibold text-white">
+                  {vramEstimate.usageGb.toFixed(2)} / {vramEstimate.limitGb} Go
+                </span>
+              </div>
+              <div className="mt-2 h-2 w-full rounded-full bg-slate-800">
+                <div
+                  className={`h-full rounded-full bg-gradient-to-r ${levelClasses[vramEstimate.level].bar}`}
+                  style={{ width: `${Math.min(vramEstimate.percent * 100, 100)}%` }}
+                />
+              </div>
+              <p className={`mt-2 text-[11px] ${levelClasses[vramEstimate.level].text}`}>{vramEstimate.message}</p>
+            </div>
+          )}
 
           {(jobLabel || jobStatusText || typeof jobProgressPercent === "number") && (
             <div className="space-y-1 rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-slate-200">

@@ -11,6 +11,7 @@ const baseHandlers = {
   onStart: vi.fn(),
   onCancel: vi.fn(),
   onDelete: vi.fn(),
+  onClearCompleted: vi.fn(),
 };
 
 afterEach(() => {

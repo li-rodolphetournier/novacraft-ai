@@ -118,6 +118,24 @@ Le job calcule d’abord l’image (steps configurables), puis enchaîne la conv
 uvicorn main:app --reload --port 8000
 ```
 
+## Chat IA locale + analyse d'images
+
+L'endpoint `POST /chat` relaie vos messages vers Ollama (`OLLAMA_BASE_URL`, par défaut `http://127.0.0.1:11434`). Deux variables permettent de choisir les modèles :
+
+| Variable | Par défaut | Usage |
+| --- | --- | --- |
+| `OLLAMA_MODEL` | `llama3.2:3b` | Modèle texte pour les conversations classiques |
+| `OLLAMA_VISION_MODEL` | `llava:7b` | Modèle multimodal utilisé automatiquement dès qu'un message contient une image |
+
+```powershell
+$env:OLLAMA_MODEL="llama3.1:8b"
+$env:OLLAMA_VISION_MODEL="llava:13b"
+```
+
+> ⚠️ Pensez à installer les modèles correspondants côté Ollama (`ollama pull llava:7b`). Si vous recevez “Je ne vois pas l’image…”, vérifiez que le modèle multimodal est bien présent ou remplacez `OLLAMA_VISION_MODEL` par un modèle vision compatible (LLaVA, Llava-phi, llama3.2-vision, etc.).
+
+Chaque message peut transporter une liste `images` contenant des chaînes base64. Le frontend encode automatiquement vos fichiers, vous n'avez rien à faire.
+
 ## Tests
 
 ### Backend

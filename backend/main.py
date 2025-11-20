@@ -51,7 +51,8 @@ ResolutionKey = Literal["512x512", "768x768", "1024x1024", "1536x1536"]
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llava:13b")
 
 # Chemins de stockage
 STORAGE_DIR = Path(__file__).parent / "storage"
@@ -134,6 +135,7 @@ class AppliedLoRA(BaseModel):
 class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant"]
     content: str
+    images: list[str] | None = None
 
 
 class ChatRequest(BaseModel):
@@ -1075,9 +1077,19 @@ def chat_with_ollama(payload: ChatRequest):
     if not payload.messages:
         raise HTTPException(status_code=400, detail="Fournissez au moins un message.")
 
+    has_images = any(message.images for message in payload.messages)
+    selected_model = payload.model or (OLLAMA_VISION_MODEL if has_images else OLLAMA_MODEL)
+
     request_payload: Dict[str, Any] = {
-        "model": payload.model or OLLAMA_MODEL,
-        "messages": [{"role": msg.role, "content": msg.content} for msg in payload.messages],
+        "model": selected_model,
+        "messages": [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                **({"images": msg.images} if msg.images else {}),
+            }
+            for msg in payload.messages
+        ],
         "stream": False,
         "options": {
             "temperature": payload.temperature,
@@ -1110,6 +1122,7 @@ def chat_with_ollama(payload: ChatRequest):
     chat_message = ChatMessage(
         role=message_data.get("role", "assistant"),
         content=message_data.get("content", ""),
+        images=message_data.get("images"),
     )
     return ChatResponseModel(message=chat_message, raw=resp_json)
 
