@@ -42,6 +42,8 @@ from model_registry import (
     ModelKey,
     ensure_lora_file,
     ensure_model_file,
+    scan_custom_loras,
+    scan_custom_models,
 )
 
 
@@ -1081,6 +1083,18 @@ def list_models():
     return {"models": models_info, "enabled": list(ENABLED_MODELS)}
 
 
+@app.post("/models/scan")
+def scan_models_directory():
+    """Scanne le dossier des modèles et ajoute les fichiers non déclarés."""
+    added = scan_custom_models()
+    response = list_models()
+    return {
+        "added": added,
+        "models": response["models"],
+        "enabled": response["enabled"],
+    }
+
+
 @app.get("/loras")
 def list_loras():
     """Expose la bibliothèque de LoRAs disponibles côté backend."""
@@ -1097,6 +1111,17 @@ def list_loras():
             }
         )
     return {"loras": items}
+
+
+@app.post("/loras/scan")
+def scan_loras_directory():
+    """Scanne le dossier des LoRAs pour ajouter les nouveaux fichiers."""
+    added = scan_custom_loras()
+    response = list_loras()
+    return {
+        "added": added,
+        "loras": response["loras"],
+    }
 
 
 @app.post("/chat", response_model=ChatResponseModel)

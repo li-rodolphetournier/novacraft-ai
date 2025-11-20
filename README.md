@@ -83,15 +83,21 @@ npm run dev
 ### Interface utilisateur
 - **Prompt + Negative Prompt** : champs texte avec presets rapides (portrait, paysage, architecture, art conceptuel)
 - **Paramètres essentiels** : sampler (Euler, DPM++, UniPC, DDIM), steps (10-60), CFG Scale (1-14), résolution (512/768/1024), seed, image count (1-4)
-- **Sélecteur de modèles** façon CivitAI (Realistic Vision, DreamShaper, MeinaMix, Juggernaut XL, SDXL base)
+- **Sélecteur de modèles** façon CivitAI, avec rafraîchissement dynamique (scan des dossiers `backend/models` et infobulle s’ils sont absents)
 - **Historique persistant** : sauvegarde automatique dans localStorage, chargement des prompts précédents avec un clic
 - **Galerie responsive** : grille adaptative avec export PNG et copie base64
-- **Indicateur de progression** : barre de progression pendant la génération
-- **Vérification des modèles** : détection automatique des modèles disponibles via l'endpoint `/models`
+- **Indicateur de progression + file de jobs** : toutes les générations passent par la queue (pause/reprise/annulation)
+- **Barre VRAM** : estimation en temps réel de la mémoire consommée selon la résolution, les LoRA, le mode vidéo/img2img, etc.
+- **Image de base (img2img)** : possibilité d’importer une image avant le prompt avec contrôle de la force (denoise)
+- **Vidéo** : mode Image→Vidéo ou Texte→Vidéo (génère automatiquement l’image de référence)
+- **Chat IA locale** : conversation avec Ollama, possibilité de joindre une image pour analyse
+- **Scan des modèles/LoRA** : bouton “Actualiser” qui détecte les nouveaux `.safetensors` déposés côté backend sans redémarrage
 
 ### Backend FastAPI
-- **Endpoint `/generate`** : génération d'images avec retour base64
-- **Endpoint `/models`** : liste des modèles disponibles avec statut d'installation
+- **Endpoint `/generate`** : génération d'images (supporte désormais `init_image_base64` + `init_strength` pour du img2img)
+- **Endpoint `/generate-video`** : génération vidéo (mode `img2vid` ou `text2vid`)
+- **Endpoints `/models`, `/models/scan`, `/loras`, `/loras/scan`** : gestion dynamique des modèles/LoRA présents sur disque
+- **Endpoints `/jobs`** : file persistante (crash recovery, pause/reprise/start/cancel/clear-completed)
 - **Endpoint `/health`** : vérification de l'état du serveur et du device (CPU/GPU)
 - **Téléchargement automatique** : récupération des modèles depuis Hugging Face si absents
 - **Support CPU/GPU** : détection automatique avec optimisation (float16 sur GPU, float32 sur CPU)

@@ -48,6 +48,7 @@ frontend/*.tsbuildinfo
 
 # Fichiers système
 .DS_Store
+.cursorrules
 Thumbs.db
 *.swp
 *.swo

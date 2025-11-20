@@ -80,6 +80,28 @@ Les générateurs fonctionnent maintenant via une file persistante :
 - `POST /jobs/resume-all` : relance tous les jobs interrompus après un crash/veille
 - `POST /jobs/clear-completed` : nettoie les jobs terminés/annulés
 
+> Tous les jobs survivent au redémarrage. Utilisez `/jobs/resume-all` pour relancer automatiquement la file après une coupure.
+
+### Scan automatique des modèles et LoRA
+
+Déposez vos fichiers `.safetensors` dans les dossiers :
+- `backend/models/` pour les checkpoints
+- `backend/models/lora/` pour les LoRA
+
+Puis déclenchez un scan (sans redémarrer) :
+
+```powershell
+# Depuis PowerShell
+Invoke-RestMethod -Method Post http://localhost:8000/models/scan
+Invoke-RestMethod -Method Post http://localhost:8000/loras/scan
+
+# ou via curl
+curl -X POST http://localhost:8000/models/scan
+curl -X POST http://localhost:8000/loras/scan
+```
+
+Le frontend dispose également d’un bouton “Actualiser” qui appelle ces endpoints. Les entrées disparues (fichiers supprimés) sont retirées automatiquement.
+
 ### Génération vidéo : image → vidéo ou texte → vidéo
 
 `POST /generate-video` prend désormais un champ `mode` :
@@ -112,6 +134,14 @@ Exemple en mode texte :
 
 Le job calcule d’abord l’image (steps configurables), puis enchaîne la conversion en vidéo tout en conservant la progression dans la file.
 
+### Mode img2img (image de base)
+
+`POST /generate` accepte en option :
+- `init_image_base64` : image de départ (PNG/JPEG encodé base64)
+- `init_strength` : force (0.05–0.95). Plus la valeur est haute, plus l’IA s’éloigne de l’image initiale.
+
+Cela correspond au bouton “Image de base (img2img)” dans l’interface.
+
 ## Lancer le serveur
 
 ```powershell
@@ -129,6 +159,7 @@ L'endpoint `POST /chat` relaie vos messages vers Ollama (`OLLAMA_BASE_URL`, par 
 
 ```powershell
 $env:OLLAMA_MODEL="llama3.1:8b"
+$env:OLLAMA_VISION_MODEL="llava:13b"
 $env:OLLAMA_VISION_MODEL="llava:13b"
 ```
 

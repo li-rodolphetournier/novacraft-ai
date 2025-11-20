@@ -35,6 +35,82 @@ const GALLERY_STORAGE_KEY = "sd_generator_gallery";
 const MAX_GALLERY_IMAGES = 100;
 const CUSTOM_PRESET_STORAGE_KEY = "sd_generator_custom_presets";
 
+
+
+type ChatEntry = { role: "user" | "assistant"; content: string; images?: string[] };
+type ModelCatalogEntry = {
+  label: string;
+  value: ModelKey;
+  note: string;
+  available: boolean;
+  highlight?: string;
+  nsfw?: boolean;
+};
+
+const BASE_MODEL_CATALOG: Omit<ModelCatalogEntry, "available">[] = [
+  {
+    label: "SDXL Base 1.0",
+    value: "sdxl" as ModelKey,
+    note: "Officiel · top qualité",
+    highlight: "Choix recommandé",
+    nsfw: false,
+  },
+  {
+    label: "CyberRealistic Pony",
+    value: "cyberrealistic-pony" as ModelKey,
+    note: "CyberRealistic / style pony",
+    nsfw: false,
+  },
+  {
+    label: "Tsunade iL",
+    value: "tsunade-il" as ModelKey,
+    note: "Style Tsunade iL",
+    nsfw: false,
+  },
+  {
+    label: "Wai Illustrious SDXL",
+    value: "wai-illustrious-sdxl" as ModelKey,
+    note: "Base SDXL illustrée",
+    nsfw: false,
+  },
+  {
+    label: "wan22 Enhanced Camera",
+    value: "wan22-enhanced-nsfw-camera" as ModelKey,
+    note: "Camera prompt rapide",
+    nsfw: true,
+  },
+  {
+    label: "Hassaku XL Illustrious",
+    value: "hassaku-xl-illustrious-v32" as ModelKey,
+    note: "Hassaku XL illustrée",
+    nsfw: false,
+  },
+  {
+    label: "Duchaiten Pony XL",
+    value: "duchaiten-pony-xl" as ModelKey,
+    note: "Checkpoint pony-no-score",
+    nsfw: true,
+  },
+  {
+    label: "LucentXL Pony",
+    value: "lucentxl-pony" as ModelKey,
+    note: "Style Klaabu",
+    nsfw: false,
+  },
+  {
+    label: "Pony Diffusion V6 XL",
+    value: "ponydiffusion-v6-xl" as ModelKey,
+    note: "PDiff v6 XL",
+    nsfw: false,
+  },
+  {
+    label: "Ishtar's Gate",
+    value: "ishtars-gate-nsfw-sfw" as ModelKey,
+    note: "Mix NSFW/SFW",
+    nsfw: true,
+  },
+];
+
 export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState(
@@ -57,7 +133,6 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [availableModels, setAvailableModels] = useState<Set<string>>(new Set(["sdxl"]));
   const [mode, setMode] = useState<Mode>("image");
-  type ChatEntry = { role: "user" | "assistant"; content: string; images?: string[] };
   const [chatMessages, setChatMessages] = useState<ChatEntry[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
@@ -80,6 +155,9 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [jobsError, setJobsError] = useState<string | null>(null);
+  const [isRefreshingModels, setIsRefreshingModels] = useState(false);
+  const [isRefreshingLoras, setIsRefreshingLoras] = useState(false);
+  const [additionalModels, setAdditionalModels] = useState<ModelCatalogEntry[]>([]);
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [showDescPrompt, setShowDescPrompt] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -162,47 +240,86 @@ export default function Home() {
     loadVideos();
   }, []);
 
-  // Vérifier les modèles disponibles au montage
-  useEffect(() => {
-    fetch(`${apiBase}/models`)
-      .then((res) => res.json())
-      .then((data: { enabled?: string[]; models?: Array<{ key: string; installed: boolean; enabled: boolean }> }) => {
-        // Utilise les modèles installés ET activés
-        const available = new Set<string>();
-        if (data.models) {
-          // Filtre les modèles installés et activés
-          data.models
-            .filter((m) => m.installed && m.enabled)
-            .forEach((m) => available.add(m.key));
-        } else if (data.enabled) {
-          // Fallback sur enabled si models n'est pas disponible
-          data.enabled.forEach((key) => available.add(key));
-        }
-        setAvailableModels(available);
-      })
-      .catch(() => {
-        // Ignorer les erreurs, garder les valeurs par défaut
-      });
-  }, []);
+  const refreshAvailableModels = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/models`);
+      if (!response.ok) {
+        throw new Error("Impossible de charger la liste des modèles.");
+      }
+      const data = await response.json();
+      const available = new Set<ModelKey>();
+      const baseKeys = new Set(BASE_MODEL_CATALOG.map((entry) => entry.value));
+      const extras: ModelCatalogEntry[] = [];
+
+      if (Array.isArray(data.models)) {
+        data.models.forEach((modelItem: any) => {
+          if (!modelItem.installed) {
+            return;
+          }
+          const key = modelItem.key as ModelKey;
+          if (modelItem.enabled ?? true) {
+            available.add(key);
+          }
+          if (!baseKeys.has(key)) {
+            extras.push({
+              label:
+                modelItem.label ??
+                key
+                  .split("-")
+                  .map((chunk: string) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+                  .join(" "),
+              value: key,
+              note: modelItem.variant ? `Profil ${modelItem.variant.toUpperCase()}` : "Modèle importé",
+              highlight: undefined,
+              nsfw: false,
+              available: true,
+            });
+          }
+        });
+      }
+
+      if (available.size === 0 && Array.isArray(data.enabled)) {
+        data.enabled.forEach((key: string) => available.add(key as ModelKey));
+      }
+      if (available.size === 0) {
+          available.add("sdxl" as ModelKey);
+      }
+      setAvailableModels(available);
+      setAdditionalModels(extras);
+    } catch (err) {
+      console.warn("Impossible de charger les modèles disponibles", err);
+    }
+  }, [apiBase]);
+
+  const refreshAvailableLoras = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/loras`);
+      if (!response.ok) {
+        throw new Error("Impossible de charger les LoRA.");
+      }
+      const data = await response.json();
+      const mapped =
+        data.loras?.map((lora: any) => ({
+          key: lora.key,
+          label: lora.label,
+          description: lora.description,
+          defaultWeight: lora.default_weight ?? 0.5,
+          nsfw: Boolean(lora.nsfw),
+        })) ?? [];
+      setAvailableLoras(mapped);
+    } catch (err) {
+      console.warn("Impossible de charger les LoRA disponibles", err);
+      setAvailableLoras([]);
+    }
+  }, [apiBase]);
 
   useEffect(() => {
-    fetch(`${apiBase}/loras`)
-      .then((res) => res.json())
-      .then((data: { loras?: Array<Record<string, any>> }) => {
-        const mapped =
-          data.loras?.map((lora) => ({
-            key: lora.key,
-            label: lora.label,
-            description: lora.description,
-            defaultWeight: lora.default_weight ?? 0.5,
-            nsfw: Boolean(lora.nsfw),
-          })) ?? [];
-        setAvailableLoras(mapped);
-      })
-      .catch(() => {
-        setAvailableLoras([]);
-      });
-  }, []);
+    refreshAvailableModels();
+  }, [refreshAvailableModels]);
+
+  useEffect(() => {
+    refreshAvailableLoras();
+  }, [refreshAvailableLoras]);
 
   // Sauvegarder l'historique dans localStorage
   const saveHistory = (newHistory: HistoryEntry[]) => {
@@ -538,80 +655,33 @@ export default function Home() {
   }, []);
 
   const models = useMemo(() => {
-    return [
-      {
-        label: "SDXL Base 1.0",
-        value: "sdxl" as ModelKey,
-        note: "Officiel · top qualité",
-        available: availableModels.has("sdxl"),
-        highlight: "Choix recommandé",
-        nsfw: false,
-      },
-      {
-        label: "CyberRealistic Pony",
-        value: "cyberrealistic-pony" as ModelKey,
-        note: "CyberRealistic / style pony",
-        available: availableModels.has("cyberrealistic-pony"),
-        nsfw: false,
-      },
-      {
-        label: "Tsunade iL",
-        value: "tsunade-il" as ModelKey,
-        note: "Style Tsunade iL",
-        available: availableModels.has("tsunade-il"),
-        nsfw: false,
-      },
-      {
-        label: "Wai Illustrious SDXL v1.4",
-        value: "wai-illustrious-sdxl" as ModelKey,
-        note: "Base SDXL illustrée",
-        available: availableModels.has("wai-illustrious-sdxl"),
-        nsfw: false,
-      },
-      {
-        label: "wan22 Enhanced NSFW Camera",
-        value: "wan22-enhanced-nsfw-camera" as ModelKey,
-        note: "wan22Enhanced NSFW Camera Prompt",
-        available: availableModels.has("wan22-enhanced-nsfw-camera"),
-        nsfw: true,
-      },
-      {
-        label: "Hassaku XL Illustrious v3.2",
-        value: "hassaku-xl-illustrious-v32" as ModelKey,
-        note: "Hassaku XL Illustrious v3.2",
-        available: availableModels.has("hassaku-xl-illustrious-v32"),
-        nsfw: false,
-      },
-      {
-        label: "DucHaiten Pony XL (no-score)",
-        value: "duchaiten-pony-xl" as ModelKey,
-        note: "Checkpoint pony-no-score v4.0",
-        available: availableModels.has("duchaiten-pony-xl"),
-        nsfw: true,
-      },
-      {
-        label: "LucentXL Pony (Klaabu)",
-        value: "lucentxl-pony" as ModelKey,
-        note: "LucentXL pony stylisé",
-        available: availableModels.has("lucentxl-pony"),
-        nsfw: false,
-      },
-      {
-        label: "Pony Diffusion V6 XL",
-        value: "ponydiffusion-v6-xl" as ModelKey,
-        note: "Pony Diffusion V6 XL Start",
-        available: availableModels.has("ponydiffusion-v6-xl"),
-        nsfw: false,
-      },
-      {
-        label: "Ishtar's Gate (NSFW/SFW)",
-        value: "ishtars-gate-nsfw-sfw" as ModelKey,
-        note: "Ishtar's Gate mix NSFW/SFW",
-        available: availableModels.has("ishtars-gate-nsfw-sfw"),
-        nsfw: true,
-      },
-    ];
-  }, [availableModels]);
+    const baseEntries: ModelCatalogEntry[] = BASE_MODEL_CATALOG.map((entry) => ({
+      ...entry,
+      available: availableModels.has(entry.value),
+    })).filter((entry) => entry.available);
+
+    const extraEntries: ModelCatalogEntry[] = additionalModels
+      .map((entry) => ({
+        ...entry,
+        available: availableModels.has(entry.value),
+      }))
+      .filter((entry) => entry.available);
+
+    if (baseEntries.length === 0 && extraEntries.length === 0) {
+      return [
+        {
+          label: "SDXL Base 1.0",
+          value: "sdxl" as ModelKey,
+          note: "Disponible par défaut",
+          available: true,
+          highlight: "Choix recommandé",
+          nsfw: false,
+        },
+      ];
+    }
+
+    return [...baseEntries, ...extraEntries];
+  }, [availableModels, additionalModels]);
 
   const filteredModels = useMemo(
     () => models.filter((modelOption) => showNSFW || !modelOption.nsfw),
@@ -1272,6 +1342,50 @@ export default function Home() {
     saveImages([]);
   };
 
+  const handleScanModels = useCallback(async () => {
+    setIsRefreshingModels(true);
+    try {
+      const response = await fetch(`${apiBase}/models/scan`, { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail ?? "Impossible de scanner les modèles.");
+      }
+      const addedCount = Array.isArray(payload.added) ? payload.added.length : 0;
+      await refreshAvailableModels();
+      toast.info(
+        addedCount > 0
+          ? `${addedCount} modèle(s) détecté(s) dans le dossier.`
+          : "Aucun nouveau modèle détecté.",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Scan des modèles impossible.");
+    } finally {
+      setIsRefreshingModels(false);
+    }
+  }, [apiBase, refreshAvailableModels]);
+
+  const handleScanLoras = useCallback(async () => {
+    setIsRefreshingLoras(true);
+    try {
+      const response = await fetch(`${apiBase}/loras/scan`, { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail ?? "Impossible de scanner les LoRA.");
+      }
+      const addedCount = Array.isArray(payload.added) ? payload.added.length : 0;
+      await refreshAvailableLoras();
+      toast.info(
+        addedCount > 0
+          ? `${addedCount} LoRA détecté(s) dans le dossier.`
+          : "Aucun nouveau LoRA détecté.",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Scan des LoRA impossible.");
+    } finally {
+      setIsRefreshingLoras(false);
+    }
+  }, [apiBase, refreshAvailableLoras]);
+
 
   return (
     <div className="min-h-screen bg-slate-950 bg-[radial-gradient(circle_at_top,_#1e293b,_#020617)] text-slate-100">
@@ -1366,6 +1480,10 @@ export default function Home() {
               jobProgressPercent={displayJobProgressPercent}
               imageCount={imageCount}
             vramEstimate={vramEstimate}
+              onRefreshModels={handleScanModels}
+              onRefreshLoras={handleScanLoras}
+              isRefreshingModels={isRefreshingModels}
+              isRefreshingLoras={isRefreshingLoras}
               onModelChange={setModel}
               onSeedChange={setSeed}
               onClipSkipChange={setClipSkip}

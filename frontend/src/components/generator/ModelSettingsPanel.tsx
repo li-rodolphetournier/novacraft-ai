@@ -37,6 +37,10 @@ type ModelSettingsPanelProps = {
   jobStatusText?: string | null;
   jobProgressPercent?: number | null;
   vramEstimate: VramEstimate | null;
+  onRefreshModels: () => void;
+  onRefreshLoras: () => void;
+  isRefreshingModels: boolean;
+  isRefreshingLoras: boolean;
 };
 
 export function ModelSettingsPanel({
@@ -61,6 +65,10 @@ export function ModelSettingsPanel({
   jobStatusText,
   jobProgressPercent,
   vramEstimate,
+  onRefreshModels,
+  onRefreshLoras,
+  isRefreshingModels,
+  isRefreshingLoras,
 }: ModelSettingsPanelProps) {
   const levelClasses = {
     safe: {
@@ -79,7 +87,19 @@ export function ModelSettingsPanel({
   return (
     <div className="w-full space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Choisir le modèle (CivitAI-like)</p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+            Choisir le modèle (CivitAI-like)
+          </p>
+          <button
+            type="button"
+            onClick={onRefreshModels}
+            disabled={isRefreshingModels}
+            className="rounded-lg border border-white/15 bg-slate-900/60 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
+          >
+            {isRefreshingModels ? "Scan…" : "Actualiser"}
+          </button>
+        </div>
         <div className="mt-2 space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
           {models.map((item) => (
             <label
@@ -146,15 +166,25 @@ export function ModelSettingsPanel({
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Styles / LoRA</p>
             <p className="text-[10px] text-slate-500">Combinez plusieurs LoRA</p>
           </div>
-          {selectedLoras.length > 0 && (
+          <div className="flex items-center gap-2">
             <button
-              className="text-[10px] uppercase tracking-[0.2em] text-rose-200 transition hover:text-white"
-              onClick={onClearLoras}
               type="button"
+              onClick={onRefreshLoras}
+              disabled={isRefreshingLoras}
+              className="text-[10px] uppercase tracking-[0.2em] text-slate-200 rounded-lg border border-white/15 bg-slate-900/60 px-2 py-1 transition hover:bg-slate-800 disabled:opacity-50"
             >
-              Effacer
+              {isRefreshingLoras ? "Scan…" : "Actualiser"}
             </button>
-          )}
+            {selectedLoras.length > 0 && (
+              <button
+                className="text-[10px] uppercase tracking-[0.2em] text-rose-200 transition hover:text-white"
+                onClick={onClearLoras}
+                type="button"
+              >
+                Effacer
+              </button>
+            )}
+          </div>
         </div>
         {availableLoras.length === 0 ? (
           <p className="mt-2 rounded-xl border border-dashed border-white/10 p-2 text-[10px] text-slate-400">

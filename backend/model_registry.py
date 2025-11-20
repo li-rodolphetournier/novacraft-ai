@@ -1,37 +1,51 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
-from typing import Dict, Literal
+from typing import Any, Dict
 
 from huggingface_hub import hf_hub_download
 
 
-ModelKey = Literal[
-    "realistic-vision",
-    "dreamshaper",
-    "meinamik",
-    "sdxl",
-    "sdxl-turbo",
-    "dreamshaper-xl",
-    "juggernaut-xl",
-    "realvis-xl",
-    "sd-1.5-base",
-    "chilloutmix",
-    "deliberate",
-    "cyberrealistic-pony",
-    "tsunade-il",
-    "wai-illustrious-sdxl",
-    "wan22-enhanced-nsfw-camera",
-    "hassaku-xl-illustrious-v32",
-    "duchaiten-pony-xl",
-    "lucentxl-pony",
-    "ponydiffusion-v6-xl",
-    "ishtars-gate-nsfw-sfw",
-    "diving-illustrious",
-]
+ModelKey = str
 
-MODEL_CONFIG: Dict[ModelKey, Dict[str, str]] = {
+BASE_DIR = Path(__file__).resolve().parent
+MODELS_DIR = BASE_DIR / "models"
+LORA_DIR = MODELS_DIR / "lora"
+STORAGE_DIR = BASE_DIR / "storage"
+STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+CUSTOM_MODELS_FILE = STORAGE_DIR / "custom_models.json"
+CUSTOM_LORAS_FILE = STORAGE_DIR / "custom_loras.json"
+
+for custom_path in (CUSTOM_MODELS_FILE, CUSTOM_LORAS_FILE):
+    if not custom_path.exists():
+        custom_path.write_text("[]", encoding="utf-8")
+
+
+def _load_json_list(path: Path) -> list[Dict[str, Any]]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _save_json_list(path: Path, data: list[Dict[str, Any]]) -> None:
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _slugify(name: str, existing: set[str], prefix: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or prefix
+    candidate = base
+    counter = 1
+    while candidate in existing:
+        candidate = f"{base}-{counter}"
+        counter += 1
+    return candidate
+
+
+MODEL_CONFIG: Dict[ModelKey, Dict[str, Any]] = {
     "sdxl": {
         "path": os.getenv("MODEL_SDXL", "models/sdxlTurbo_fullVersion.safetensors"),
         "variant": "sdxl",
@@ -210,7 +224,7 @@ MODEL_SOURCES: Dict[ModelKey, Dict[str, str]] = {
     },
 }
 
-LORA_LIBRARY: Dict[str, Dict[str, str | float]] = {
+LORA_LIBRARY: Dict[str, Dict[str, Any]] = {
     "expressive-h": {
         "label": "ExpressiveH (Hentai LoRa Style)",
         "path": os.getenv("LORA_EXPRESSIVE_H", "models/lora/Expressive_H.safetensors"),
@@ -255,15 +269,6 @@ LORA_LIBRARY: Dict[str, Dict[str, str | float]] = {
         "description": "LoRA PTS alpha (rank4)",
         "nsfw": True,
     },
-    "23high-noise-cumshot": {
-        "label": "23High Noise Cumshot Aesthetics",
-        "path": os.getenv(
-            "LORA_23HIGH_NOISE", "models/lora/23High noise-Cumshot Aesthetics.safetensors"
-        ),
-        "default_weight": 0.5,
-        "description": "Renforce le grain/particules façon shooting pop.",
-        "nsfw": True,
-    },
     "wan22-i2v": {
         "label": "Wan 2.2 I2V A14B",
         "path": os.getenv(
@@ -295,6 +300,136 @@ LORA_LIBRARY: Dict[str, Dict[str, str | float]] = {
         "nsfw": True,
     },
 }
+
+
+CUSTOM_MODELS_REGISTRY: list[Dict[str, Any]] = _load_json_list(CUSTOM_MODELS_FILE)
+for entry in CUSTOM_MODELS_REGISTRY:
+    key = entry.get("key")
+    path = entry.get("path")
+    if not key or not path:
+        continue
+    MODEL_CONFIG[key] = {
+        "path": path,
+        "variant": entry.get("variant", "sdxl"),
+        "label": entry.get("label", key.replace("-", " ").title()),
+        **{k: entry.get(k) for k in ("lora_path", "lora_label") if entry.get(k)},
+    }
+
+CUSTOM_LORA_REGISTRY: list[Dict[str, Any]] = _load_json_list(CUSTOM_LORAS_FILE)
+for entry in CUSTOM_LORA_REGISTRY:
+    key = entry.get("key")
+    path = entry.get("path")
+    if not key or not path:
+        continue
+    LORA_LIBRARY[key] = {
+        "label": entry.get("label", key.replace("-", " ").title()),
+        "path": path,
+        "default_weight": entry.get("default_weight", 0.5),
+        "description": entry.get("description", "LoRA importé depuis le dossier local."),
+        "nsfw": bool(entry.get("nsfw", False)),
+    }
+
+
+def scan_custom_models() -> list[Dict[str, Any]]:
+    existing_paths = {str(Path(config["path"]).expanduser().resolve()) for config in MODEL_CONFIG.values()}
+    added_entries: list[Dict[str, Any]] = []
+    removed_keys: list[str] = []
+
+    # Retirer les entrées dont le fichier n'existe plus
+    for entry in list(CUSTOM_MODELS_REGISTRY):
+        path = entry.get("path")
+        key = entry.get("key")
+        if not path or not key:
+            continue
+        if not Path(path).exists() and key in MODEL_CONFIG:
+            CUSTOM_MODELS_REGISTRY.remove(entry)
+            MODEL_CONFIG.pop(key, None)
+            removed_keys.append(key)
+
+    if not MODELS_DIR.exists():
+        if removed_keys:
+            _save_json_list(CUSTOM_MODELS_FILE, CUSTOM_MODELS_REGISTRY)
+        return added_entries
+
+    for file_path in MODELS_DIR.glob("*.safetensors"):
+        resolved = str(file_path.resolve())
+        if resolved in existing_paths:
+            continue
+        existing_paths.add(resolved)
+        key = _slugify(file_path.stem, set(MODEL_CONFIG.keys()), "custom-model")
+        variant_hint = "sdxl" if "xl" in file_path.stem.lower() or "sdxl" in file_path.stem.lower() else "sd15"
+        entry = {
+            "key": key,
+            "path": resolved,
+            "variant": variant_hint,
+            "label": file_path.stem.replace("_", " ").replace("-", " ").title(),
+        }
+        CUSTOM_MODELS_REGISTRY.append(entry)
+        MODEL_CONFIG[key] = {
+            "path": resolved,
+            "variant": variant_hint,
+            "label": entry["label"],
+        }
+        added_entries.append(entry)
+
+    if added_entries:
+        _save_json_list(CUSTOM_MODELS_FILE, CUSTOM_MODELS_REGISTRY)
+    elif removed_keys:
+        _save_json_list(CUSTOM_MODELS_FILE, CUSTOM_MODELS_REGISTRY)
+    return added_entries
+
+
+def scan_custom_loras() -> list[Dict[str, Any]]:
+    existing_paths = {
+        str(Path(config["path"]).expanduser().resolve()) for config in LORA_LIBRARY.values()
+    }
+    added_entries: list[Dict[str, Any]] = []
+    removed_keys: list[str] = []
+
+    for entry in list(CUSTOM_LORA_REGISTRY):
+        path = entry.get("path")
+        key = entry.get("key")
+        if not path or not key:
+            continue
+        if not Path(path).exists() and key in LORA_LIBRARY:
+            CUSTOM_LORA_REGISTRY.remove(entry)
+            LORA_LIBRARY.pop(key, None)
+            removed_keys.append(key)
+
+    if not LORA_DIR.exists():
+        if removed_keys:
+            _save_json_list(CUSTOM_LORAS_FILE, CUSTOM_LORA_REGISTRY)
+        return added_entries
+
+    for file_path in LORA_DIR.glob("*.safetensors"):
+        resolved = str(file_path.resolve())
+        if resolved in existing_paths:
+            continue
+        existing_paths.add(resolved)
+        key = _slugify(file_path.stem, set(LORA_LIBRARY.keys()), "custom-lora")
+        entry = {
+            "key": key,
+            "path": resolved,
+            "label": file_path.stem.replace("_", " ").replace("-", " ").title(),
+            "default_weight": 0.5,
+            "description": "LoRA importé automatiquement.",
+            "nsfw": False,
+        }
+        CUSTOM_LORA_REGISTRY.append(entry)
+        LORA_LIBRARY[key] = {
+            "label": entry["label"],
+            "path": resolved,
+            "default_weight": entry["default_weight"],
+            "description": entry["description"],
+            "nsfw": entry["nsfw"],
+        }
+        added_entries.append(entry)
+
+    if added_entries:
+        _save_json_list(CUSTOM_LORAS_FILE, CUSTOM_LORA_REGISTRY)
+    elif removed_keys:
+        _save_json_list(CUSTOM_LORAS_FILE, CUSTOM_LORA_REGISTRY)
+    return added_entries
 
 
 def ensure_model_file(model_key: ModelKey) -> Path:
