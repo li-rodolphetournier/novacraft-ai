@@ -2,7 +2,7 @@
 
 Projet local complet suivant le cahier des charges :
 
-- **Frontend** : Next.js 15 (App Router, Tailwind) avec interface façon Leonardo.ai
+- **Frontend** : Next.js (App Router, TailwindCSS 4, React 19) avec interface façon Leonardo.ai
 - **Backend** : FastAPI + Diffusers pour piloter Stable Diffusion (SD1.5 & SDXL)
 - **Offline first** : les modèles sont chargés depuis des fichiers `.safetensors` stockés localement
 
@@ -82,7 +82,7 @@ npm run dev
 
 ### Interface utilisateur
 - **Prompt + Negative Prompt** : champs texte avec presets rapides (portrait, paysage, architecture, art conceptuel)
-- **Paramètres essentiels** : sampler (Euler, DPM++, UniPC, DDIM), steps (10-60), CFG Scale (1-14), résolution (512/768/1024), seed, image count (1-4)
+- **Paramètres essentiels** : sampler (Euler, DPM++, UniPC, DDIM), steps (10-60), CFG Scale (1-14), résolution (512/768/1024 ou dimensions personnalisables), seed, image count (1-4)
 - **Sélecteur de modèles** façon CivitAI, avec rafraîchissement dynamique (scan des dossiers `backend/models` et infobulle s’ils sont absents)
 - **Historique persistant** : sauvegarde automatique dans localStorage, chargement des prompts précédents avec un clic
 - **Galerie responsive** : grille adaptative avec export PNG et copie base64
@@ -100,13 +100,31 @@ npm run dev
 - **Endpoints `/jobs`** : file persistante (crash recovery, pause/reprise/start/cancel/clear-completed)
 - **Endpoint `/health`** : vérification de l'état du serveur et du device (CPU/GPU)
 - **Téléchargement automatique** : récupération des modèles depuis Hugging Face si absents
-- **Support CPU/GPU** : détection automatique avec optimisation (float16 sur GPU, float32 sur CPU)
+- **Support CPU/GPU** : détection automatique avec optimisation (float16 sur GPU, float32 sur CPU), VAE/Attention Slicing et CPU offload (limité à 1 modèle en cache pour 8Go de VRAM). Utilisez `USE_CPU_OFFLOAD=true` si besoin.
 
-> Par défaut, seul le preset **SDXL** est autorisé côté serveur pour assurer la meilleure qualité. Lorsque vous voudrez activer d’autres mélanges SD1.5/SDXL, définissez la variable d’environnement `ENABLED_MODELS` (ex : `sdxl,realistic-vision`) et relancez FastAPI.
+> Par défaut, une large sélection de modèles (SDXL, Pony, Illustrious, etc.) est autorisée côté serveur. Pour restreindre ou activer d'autres mélanges SD1.5/SDXL/Pony, définissez la variable d’environnement `ENABLED_MODELS` (ex : `sdxl,realistic-vision,cyberrealistic-pony`) et relancez FastAPI.
 
-### Téléchargement auto des modèles
+Les poids des modèles sont lourds (plusieurs Go). Si vous manquez de place, vous pouvez supprimer certains fichiers dans `backend/models/`.
 
-Depuis `backend/`, utilisez `python download_models.py --all` pour récupérer les poids listés dans le registre (Hugging Face Hub). Le backend tente aussi le téléchargement à la volée si un fichier manque.
+### Modèles "Cloud" (Récupérables automatiquement)
+Ces modèles peuvent être supprimés sans crainte. Le backend les re-téléchargera depuis Hugging Face dès que vous les utiliserez ou via le script dédié.
+- **SDXL Base** (`sdxlTurbo_fullVersion.safetensors`)
+- **SDXL Turbo** (`sd_xl_turbo_1.0.safetensors`)
+- **RealVis XL** (`RealVisXL_V4.0.safetensors`)
+- **Realistic Vision** (`Realistic_Vision_V5.1-noVAE.safetensors`)
+- **DreamShaper / MeinaMix / ChilloutMix**
+- **Stable Diffusion 1.5** (`v1-5-pruned.safetensors`)
+
+Pour tout re-télécharger d'un coup :
+```powershell
+cd backend
+python download_models.py --all
+```
+
+### Modèles "Locaux" (À ne PAS supprimer)
+Ne supprimez pas les fichiers suivants car ils n'ont pas de source automatique (sauf si vous les avez téléchargés vous-même ailleurs) :
+- Le contenu du dossier `backend/models/lora/`.
+- Les modèles spécifiques comme `waiIllustriousSDXL`, `pony-no-score`, `lucentxlPony`, etc.
 
 ## Tests
 
